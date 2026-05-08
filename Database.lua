@@ -290,9 +290,9 @@ function QuestKeeperDBAddon.UpdateList()
             html = html.."<p align='center'>|cffaaaaaaAccepted:|r "..(data.acceptedDate or "Unknown").."</p>"
             html = html.."<p align='center'>|cffaaaaaaCompleted/Abandoned:|r "..(data.completedDate or "Unknown").."</p><br/>"
             
-            html = html.."<p>|cff00ff00[Introduction]:|r<br/>"..(data.introduction or "No data").."</p><br/>"
+            html = html.."<p>|cff00ff00[Introduction]:|r<br/>"..(Sanitize(data.introduction) or "No data").."</p><br/>"
             
-            html = html.."<p>|cff00ff00[Objectives]:|r<br/>"..(data.description or "No data").."</p>"
+            html = html.."<p>|cff00ff00[Objectives]:|r<br/>"..(Sanitize(data.description) or "No data").."</p>"
             if data.handInItems and #data.handInItems > 0 then 
                 for _, id in pairs(data.handInItems) do html = html..QuestKeeperDBAddon.GetItemHTML(id, "Requires:") end 
             end
@@ -325,7 +325,7 @@ function QuestKeeperDBAddon.UpdateList()
             html = html.."<br/>"
 
             -- In Progress
-            html = html.."<p>|cff00ff00[In Progress]:|r<br/>"..(data.progressText or "No data").."</p>"
+            html = html.."<p>|cff00ff00[In Progress]:|r<br/>"..(Sanitize(data.progressText) or "No data").."</p>"
             if data.progItems and #data.progItems > 0 then
                 for _, id in pairs(data.progItems) do 
                     html = html..QuestKeeperDBAddon.GetItemHTML(id, "|cff808080Mentions:|r") 
@@ -333,18 +333,20 @@ function QuestKeeperDBAddon.UpdateList()
             end
             html = html.."<br/>"
 
-            -- Completion (for daily and repeatable quests show the completions counter)
+            -- Completion
+            -- (for daily and repeatable quests show the completions counter)
             local compHeader = "|cff00ff00[Completion]:|r"
             if data.isDaily or data.isRepeatable then
                 local count = data.completionCount or 0
                 compHeader = "|cff00ff00[Completion] (" .. count .. " times):|r"
             end
             
-            html = html.."<p>"..compHeader.."<br/>"..(data.completionText or "No data").."</p>"
+            -- Completion text
+            html = html.."<p>"..compHeader.."<br/>"..(Sanitize(data.completionText) or "No data").."</p>"
             
             -- Completion history (for daily and repeatable quests only)
             if (data.isDaily or data.isRepeatable) and data.completionHistory and #data.completionHistory > 0 then
-                html = html .. "<p>|cffaaaaaaHistory:|r</p>"
+                html = html .. "<br/><p>|cffaaaaaaHistory:|r</p>"
                 for _, d in ipairs(data.completionHistory) do
                     html = html .. "<p> - " .. d .. "</p>"
                 end
