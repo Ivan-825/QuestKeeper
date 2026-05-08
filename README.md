@@ -1,9 +1,9 @@
-# QuestKeeper
+# QuestKeeper *(v.1.0.1)*
 
 ## **INTRODUCTION**
 The creation of the addon was motivated by the situation I have to face regularly when playing wow: Just as I finish the quest, head over to the NPC, click the Complete Quest button, and then find myself in a situation where I have no idea what is going on, and why are the previously friendly NPC grumpy with scarlet nameplates. It's a bad habit, ruins the experience and the player misses out on the lore and the humor of the game - It still happens from time to time. With this addon, the user is able to read back the details, the story of the given quest. And if I already added support for that, why not satisfy my appreciation of statistics, and track as many things regarding each quest as possible?
 
-## **FUNCTIONALITY** *(v.1.0.0b)*:
+## **FUNCTIONALITY**
 
 * Tracking newly discovered, accepted, completed and abandoned quests.
 * For each quest, timestamp is saved for each state.
@@ -17,10 +17,10 @@ The creation of the addon was motivated by the situation I have to face regularl
 * Order by id, quest name, quest state and timestamp is supported.
 * Daily and repeatable quest are distinguished from normal quests.
 
-## **COMPATIBILITY:**
+## **COMPATIBILITY**
 * Currently only supports Game Version 12.0.5 (Midnight)
 
-## **KNOWN ISSUES:**
+## **KNOWN ISSUES**
 * Amount is not yet tracked for reward currencies
 
 ## **PLANNED FEATURES**

@@ -131,6 +131,7 @@ f:SetScript("OnEvent", function(self, event, arg1)
             else
                 q.status, q.completedDate = "completed", QuestKeeperDBAddon.GetDate()
                 q.xp, q.money = GetRewardXP(), GetRewardMoney()
+                q.completionText = GetRewardText()
                 if q.isDaily or q.isRepeatable then
                     q.completionCount = (q.completionCount or 0) + 1
                     if not q.completionHistory then q.completionHistory = {} end

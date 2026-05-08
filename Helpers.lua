@@ -1,3 +1,27 @@
+-- Text Sanitization for safe HTML texts
+function Sanitize(text)
+    if not text or text == "" then return end
+    local clean = text
+    
+    -- Handle & char
+    clean = clean:gsub("&", "&amp;")
+    
+    -- handle < and >
+    clean = clean:gsub("<", "&lt;")
+    clean = clean:gsub(">", "&gt;")
+    
+    -- handle "
+    clean = clean:gsub("\"", "&quot;")
+    
+    -- de-color
+    --clean = clean:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    
+    --linebreak
+    clean = clean:gsub("\n", "<br/>")
+    
+    return clean
+end
+
 -- Handle both Items and Currencies
 function QuestKeeperDBAddon.GetItemHTML(id, label, isCurrency)
     if not id or id == 0 then return "" end
