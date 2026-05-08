@@ -6,42 +6,41 @@ local statusMap = {
         }
 
 function QuestKeeperDBAddon.ValidateDatabase()
-    local numEntries = C_QuestLogDB.GetNumQuestKeeperDBEntries()
+    local numEntries = C_QuestLog.GetNumQuestLogEntries()
     for i = 1, numEntries do
-        local info = C_QuestLogDB.GetInfo(i)
+        local info = C_QuestLog.GetInfo(i)
         if info and info.questID and not info.isHeader and not info.isHidden then
             local qID = info.questID
             
             -- For new Quests
             if not QuestKeeperDB[qID] then
-                local isDaily = false
-                local isRepeatable = false
-                if C_QuestLogDB.IsQuestDaily and C_QuestLogDB.IsQuestDaily(qID) then
-                    isDaily = true
-                elseif info.frequency == 1 then
-                    isDaily = true
-                elseif info.frequency == 2 then
-                    isRepeatable = true
-                end
+                local isDaily = (info.frequency == Enum.QuestFrequency.Daily)
+                local isRepeatable = (info.frequency == Enum.QuestFrequency.Repeatable)
 
                 QuestKeeperDB[qID] = { 
+                    id = qID,
                     title = info.title or "Unknown", 
                     status = "inProgress", 
                     timestamp = time(), 
-                    isImported = false, 
-                    acceptedDate = "Unknown", 
+                    isImported = false,
+                    isDaily = isDaily,
+                    isRepeatable = isRepeatable,
+                    introduction = "",
+                    description = "",
+                    progressText = "",
+                    completionText = "",
                     discoveredDate = "Unknown", 
+                    acceptedDate = QuestKeeperDBAddon.GetDate and QuestKeeperDBAddon.GetDate() or "Unknown", 
                     completedDate = "Unknown",
-                    rewardItems = {}, 
-                    objItems = {}, 
-                    handInItems = {},
-                    progItems = {},
-                    compItems = {},
+                    displayDate = "Unknown",
                     xp = 0, 
                     money = 0, 
                     rep = "",
-                    isDaily = isDaily,
-                    isRepeatable = isRepeatable,
+                    rewardItems = {}, 
+                    handInItems = {},
+                    progItems = {},
+                    compItems = {},
+                    objItems = {},
                     completionCount = 0,
                     completionHistory = {}
                 }
@@ -50,59 +49,62 @@ function QuestKeeperDBAddon.ValidateDatabase()
             -- Update details for in-progress quests
             local q = QuestKeeperDB[qID]
             if q.status == "inProgress" and (not q.introduction or q.introduction == "") then
-                local questIndex = C_QuestLogDB.GetLogIndexForQuestID(qID)
+                local questIndex = C_QuestLog.GetLogIndexForQuestID(qID)
                 if questIndex then
-                    local intro, objectives = GetQuestKeeperDBQuestText(questIndex)
-                    q.introduction = intro
-                    q.description = objectives
-                    q.xp = GetQuestKeeperDBRewardXP(qID) or 0
-                    q.money = GetQuestKeeperDBRewardMoney(qID) or 0
+                    local intro, objectives = GetQuestLogQuestText(questIndex)
+                    q.introduction = intro or ""
+                    q.description = objectives or ""
+                    q.xp = GetQuestLogRewardXP(qID) or 0
+                    q.money = GetQuestLogRewardMoney(qID) or 0
                     
-                    -- Update type
-                    if C_QuestLogDB.IsQuestDaily and C_QuestLogDB.IsQuestDaily(qID) then
-                        q.isDaily = true
-                    elseif info.frequency == 1 then
-                        q.isDaily = true
-                    elseif info.frequency == 2 then
-                        q.isRepeatable = true
-                    end
+                    if info.frequency == 1 then q.isDaily = true
+                    elseif info.frequency == 2 then q.isRepeatable = true end
                 end
             end
         end
     end
 
     -- Recover quests that were completed at a time when QuestKeeper was not active
-    local allCompleted = C_QuestLogDB.GetAllCompletedQuestIDs()
-    for _, qID in ipairs(allCompleted) do
-        if not QuestKeeperDB[qID] then
-            local isDaily = false
-            local isRepeatable = false
-            
-            -- Attempts to recover type (probably does not work :D)
-            if C_QuestLogDB.IsQuestDaily and C_QuestLogDB.IsQuestDaily(qID) then
-                isDaily = true
+    local allCompleted = C_QuestLog.GetAllCompletedQuestIDs()
+    local importCount = 0
+    if allCompleted then
+        for _, qID in ipairs(allCompleted) do
+            if not QuestKeeperDB[qID] then
+                importCount = importCount + 1
+                QuestKeeperDB[qID] = { 
+                    id = qID,
+                    title = C_QuestLog.GetTitleForQuestID(qID) or "Imported", 
+                    status = "completed", 
+                    isImported = true, 
+                    timestamp = time(), 
+                    isDaily = false,
+                    isRepeatable = false,
+                    introduction = "N/A (Imported)",
+                    description = "N/A (Imported)",
+                    progressText = "",
+                    completionText = "",
+                    discoveredDate = "Unknown", 
+                    acceptedDate = "Unknown", 
+                    completedDate = "Unknown",
+                    displayDate = "Unknown",
+                    xp = 0, 
+                    money = 0, 
+                    rep = "",
+                    rewardItems = {}, 
+                    handInItems = {},
+                    progItems = {},
+                    compItems = {},
+                    objItems = {},
+                    completionCount = 1,
+                    completionHistory = {}
+                }
             end
-
-            QuestKeeperDB[qID] = { 
-                title = "Imported", 
-                status = "completed", 
-                isImported = true, 
-                timestamp = 0, 
-                rewardItems = {}, 
-                objItems = {}, 
-                handInItems = {},
-                progItems = {},
-                compItems = {},
-                rep = "", 
-                discoveredDate = "Unknown", 
-                acceptedDate = "Unknown", 
-                completedDate = "Unknown",
-                isDaily = isDaily,
-                isRepeatable = isRepeatable,
-                completionCount = 1,
-                completionHistory = {}
-            }
         end
+    end
+
+    
+    if importCount > 0 then
+        print("|cff00ff00QuestKeeper:|r Successfully imported |cffffffff" .. importCount .. "|r quests that were completed while the addon was not enabled / installed.")
     end
 end
 
@@ -313,7 +315,6 @@ function QuestKeeperDBAddon.UpdateList()
             -- CURRENCIES 
             if data.awards and #data.awards > 0 then 
                 for _, award in pairs(data.awards) do 
-                    -- Meghívjuk a Helpers.lua-ban lévő javított függvényt isCurrency = true kapcsolóval
                     html = html .. QuestKeeperDBAddon.GetItemHTML(award.id, "Grants:", true) 
                 end 
             end

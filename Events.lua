@@ -50,7 +50,7 @@ end
 f:SetScript("OnEvent", function(self, event, arg1)
     if event == "QUEST_FINISHED" then sessionProcessed = {} return end
 
-    if event == "ADDON_LOADED" and arg1 == "QuestKeeperDB" then
+    if event == "ADDON_LOADED" and arg1 == "QuestKeeper" then
         C_Timer.After(2, function() QuestKeeperDBAddon.ValidateDatabase() end)
         return
     end
@@ -85,13 +85,19 @@ f:SetScript("OnEvent", function(self, event, arg1)
     local q = QuestKeeperDB[qID]
     q.timestamp = time()
     q.isImported = false
-    if GetTitleText() and GetTitleText() ~= "" then q.title = GetTitleText() end
 
-    if q.status == "completed" and not q.isDaily and not q.isRepeatable then
+    local isD, isR = GetQuestType(qID)
+    if q.status == "completed" and (isD or isR) then
         if not sessionProcessed[qID] then
-            q.isRepeatable, q.status = true, "discovered"
+            q.status = "discovered"
             sessionProcessed[qID] = true
         end
+    end
+
+    -- Save information that is accessible right away
+    if event == "QUEST_DETAIL" then
+        q.title = GetTitleText();
+        q.introduction, q.description, q.discoveredDate = GetQuestText(), GetObjectiveText(), QuestKeeperDBAddon.GetDate()
     end
 
     if event == "QUEST_DETAIL" or event == "QUEST_COMPLETE" then
@@ -100,12 +106,12 @@ f:SetScript("OnEvent", function(self, event, arg1)
         local isD, isR, fVal = GetQuestType(qID)
         if isD then q.isDaily, q.isRepeatable = true, false elseif isR then q.isDaily, q.isRepeatable = false, true end
 
+        -- wait to make sure blizzard api returns details
         C_Timer.After(0.4, function()
             local isD2, isR2 = GetQuestType(qID)
             if isD2 then q.isDaily, q.isRepeatable = true, false elseif isR2 then q.isDaily, q.isRepeatable = false, true end
 
             if event == "QUEST_DETAIL" then
-                q.introduction, q.description, q.discoveredDate = GetQuestText(), GetObjectiveText(), QuestKeeperDBAddon.GetDate()
                 q.xp, q.money = GetRewardXP(), GetRewardMoney()
                 q.rewardItems, q.handInItems = {}, {}
 
