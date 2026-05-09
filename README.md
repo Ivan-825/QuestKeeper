@@ -3,7 +3,7 @@
 *A comprehensive quest chronicler that tracks dialogue, rewards, reputation for all discovered, accepted, completed, or abandoned quests with timestamps for each stage.*
 
 ## **WHY?**
-The creation of the addon was motivated by me having to face the situation while playing WoW quite regularly: I finish the quest, head over to the NPC, click the Complete Quest button, and then find myself in situations where I have no idea what is going on, like why are the previously friendly NPCs grumpy with scarlet nameplates. While it might be that the user is to take the blame for not reading the quest details (missing out on the story of the quest, game lore) - It still happens from time to time. With this addon, the user is able to read back the details, the story of the given quest. And if I already track that much of each quest, why not satisfy the needs of a collector and track as many things regarding each quest as possible?
+The creation of the addon was motivated by me having to face the situation while playing WoW quite regularly: I finish the quest, head over to the NPC, click the Complete Quest button, and then find myself in situations where I have no idea what is going on, like why are the previously friendly NPCs grumpy with scarlet nameplates. While it might be that the user is to take the blame for not reading the quest details (missing out on the story of the quest, game lore) - It still happens from time to time. With this addon, the user is able to read back the details, the story of the given quest. And if I already track that much of each quest, why not satisfy the needs of a collector and track as many things regarding each quest as possible? This addon was originally meant for self-use only, but as currently no other addon offers this detailed tracking, I though others might find this helpful too. 
 
 ## **FUNCTIONALITY**
 
@@ -28,6 +28,8 @@ The creation of the addon was motivated by me having to face the situation while
 
 ## **PLANNED FEATURES**
 * Independent quest tracking for separate characters, with option to combine all characters QuestKeeper database.
+* Track dialogue during cutscenes
+* Properly track conversations for quests that require player to talk to NPCs
 
 ## **LICENSE**
 All rights reserved, for now at least.
