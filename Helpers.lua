@@ -1,6 +1,6 @@
 -- Text Sanitization for safe HTML texts
 function Sanitize(text)
-    if not text or text == "" then return end
+    if not text or text == "" or text == "No data" then return "No data recorded." end
     local clean = text
     
     -- Handle & char
@@ -58,4 +58,36 @@ function QuestKeeperDBAddon.HandleHyperlinkEnter(self, link)
         GameTooltip:SetHyperlink(link)
         GameTooltip:Show()
     end
+end
+
+function GetQuestReputationRewards(qID)
+    local repEntries = {}
+    local numRepRewards = GetNumQuestLogRewardFactions and GetNumQuestLogRewardFactions(qID) or 0
+    
+    if numRepRewards > 0 then
+        for i = 1, numRepRewards do
+            local factionID, amount = GetQuestLogRewardFactionInfo(i, qID)
+            if factionID then
+                local factionName
+                if C_Reputation and C_Reputation.GetFactionDataByID then
+                    local data = C_Reputation.GetFactionDataByID(factionID)
+                    factionName = data and data.name
+                end
+
+                if factionName and amount and amount > 0 then
+                    -- Keep raw amount for now, we will overwrite with CHAT_MSG later
+                    table.insert(repEntries, factionName .. " (+" .. amount/100 .. ")(??)")
+                end
+            end
+        end
+    end
+
+    if #repEntries == 0 then
+        local numF = GetNumRewardFactions and GetNumRewardFactions() or 0
+        for i = 1, numF do
+            local name, _, amount = GetRewardFactionInfo(i)
+            if name then table.insert(repEntries, name .. " (+" .. amount .. ")(??)") end
+        end
+    end
+    return table.concat(repEntries, ", ")
 end

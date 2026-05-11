@@ -9,7 +9,7 @@ listFrame:SetScript("OnDragStart", listFrame.StartMoving); listFrame:SetScript("
 listFrame.TitleText:SetText(title)
 tinsert(UISpecialFrames, "QuestListFrame")
 
--- Search Bar UI (SearchBoxTemplate for def Blizzard look)
+-- Search Bar UI
 local searchBox = CreateFrame("EditBox", "QuestKeeperDBSearchBox", listFrame, "SearchBoxTemplate")
 searchBox:SetSize(180, 20)
 searchBox:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -50, -32)
@@ -26,7 +26,7 @@ QuestKeeperDBAddon.searchCount = searchCount
 
 searchBox:SetScript("OnTextChanged", function(self)
     SearchBoxTemplate_OnTextChanged(self)
-    QuestKeeperDBAddon.UpdateList()
+    if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
 end)
 
 -- List Scroll Frame
@@ -39,10 +39,38 @@ local detailFrame = CreateFrame("Frame", "QuestDetailDisplay", UIParent, "BasicF
 detailFrame:SetSize(450, 600); detailFrame:SetPoint("LEFT", listFrame, "RIGHT", 10, 0); detailFrame:Hide()
 tinsert(UISpecialFrames, "QuestDetailDisplay")
 
+-- FIXED HEADER (With 40px top margin)
+detailFrame.titleText = detailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+detailFrame.titleText:SetPoint("TOP", 0, -40) -- Increased margin at top
+detailFrame.titleText:SetWidth(400)
+
+detailFrame.metaText = detailFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+detailFrame.metaText:SetPoint("TOP", detailFrame.titleText, "BOTTOM", 0, -5)
+detailFrame.metaText:SetWidth(400)
+detailFrame.metaText:SetJustifyH("CENTER")
+
+-- GOSSIP PAGINATION (Less padding)
+detailFrame.gossipHeader = CreateFrame("Frame", nil, detailFrame)
+detailFrame.gossipHeader:SetSize(400, 20) -- Reduced height
+detailFrame.gossipHeader:SetPoint("TOP", detailFrame.metaText, "BOTTOM", 0, -5) -- Reduced top padding
+
+detailFrame.prevGossip = CreateFrame("Button", nil, detailFrame.gossipHeader, "UIPanelButtonTemplate")
+detailFrame.prevGossip:SetSize(26, 18); detailFrame.prevGossip:SetPoint("LEFT", 15, 0); detailFrame.prevGossip:SetText("<")
+
+detailFrame.nextGossip = CreateFrame("Button", nil, detailFrame.gossipHeader, "UIPanelButtonTemplate")
+detailFrame.nextGossip:SetSize(26, 18); detailFrame.nextGossip:SetPoint("RIGHT", -15, 0); detailFrame.nextGossip:SetText(">")
+
+detailFrame.gossipPageText = detailFrame.gossipHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+detailFrame.gossipPageText:SetPoint("CENTER", 0, 0)
+
+-- SCROLL AREA (Tightened position)
 detailFrame.scroll = CreateFrame("ScrollFrame", nil, detailFrame, "UIPanelScrollFrameTemplate")
-detailFrame.scroll:SetPoint("TOPLEFT", 15, -35); detailFrame.scroll:SetPoint("BOTTOMRIGHT", -35, 45)
+detailFrame.scroll:SetPoint("TOPLEFT", 15, -145) -- Moved up as buttons take less space
+detailFrame.scroll:SetPoint("BOTTOMRIGHT", -35, 45)
+
 detailFrame.content = CreateFrame("SimpleHTML", nil, detailFrame.scroll)
-detailFrame.content:SetSize(380, 100); detailFrame.content:SetFontObject("p", GameFontNormal); detailFrame.content:SetFontObject("h1", GameFontHighlightLarge)
+detailFrame.content:SetSize(380, 100)
+detailFrame.content:SetFontObject("p", GameFontNormal)
 detailFrame.scroll:SetScrollChild(detailFrame.content)
 
 detailFrame.content:SetScript("OnHyperlinkEnter", QuestKeeperDBAddon.HandleHyperlinkEnter)
@@ -67,64 +95,54 @@ function QuestKeeperDBAddon.CreateEditField(label, yOffset, height, multi)
     bg:SetBackdropColor(0,0,0,0.5); bg:SetBackdropBorderColor(0.3, 0.3, 0.3)
     bg:SetPoint("TOPLEFT", 20, yOffset - 15); bg:SetSize(460, height or 25)
     local eb = CreateFrame("EditBox", nil, bg)
-    eb:SetMultiLine(multi); eb:SetMaxLetters(3000); eb:SetFontObject(GameFontHighlight); eb:SetAutoFocus(false)
+    eb:SetMultiLine(multi); eb:SetMaxLetters(5000); eb:SetFontObject(GameFontHighlight); eb:SetAutoFocus(false)
     eb:SetPoint("TOPLEFT", 5, -5); eb:SetPoint("BOTTOMRIGHT", -5, 5)
     return eb
 end
 
 QuestKeeperDBAddon.eFields = {
-    title = QuestKeeperDBAddon.CreateEditField("Title:", -30),
-    intro = QuestKeeperDBAddon.CreateEditField("Introduction:", -75, 50, true),
-    desc = QuestKeeperDBAddon.CreateEditField("Objectives:", -140, 50, true),
-    prog = QuestKeeperDBAddon.CreateEditField("Progress Text:", -205, 30, true),
-    comp = QuestKeeperDBAddon.CreateEditField("Completion Text:", -250, 50, true),
-    rewards = QuestKeeperDBAddon.CreateEditField("Reward Item IDs (comma):", -315),
-    objs = QuestKeeperDBAddon.CreateEditField("Hand-in Item IDs (comma):", -360),
-    progItems = QuestKeeperDBAddon.CreateEditField("In Progress Item IDs (comma):", -405),
-    xp = QuestKeeperDBAddon.CreateEditField("XP:", -450),
-    rep = QuestKeeperDBAddon.CreateEditField("Reputation (Faction:Value):", -495)
+    title     = QuestKeeperDBAddon.CreateEditField("Title:", -30),
+    intro     = QuestKeeperDBAddon.CreateEditField("Introduction (Gossip):", -75, 50, true),
+    desc      = QuestKeeperDBAddon.CreateEditField("Description (Story):", -140, 50, true),
+    objs      = QuestKeeperDBAddon.CreateEditField("Objectives:", -205, 50, true), 
+    prog      = QuestKeeperDBAddon.CreateEditField("Progress Text:", -270, 30, true),
+    comp      = QuestKeeperDBAddon.CreateEditField("Completion Text:", -315, 50, true),
+    rewards   = QuestKeeperDBAddon.CreateEditField("Reward Item IDs (comma):", -380),
+    handin    = QuestKeeperDBAddon.CreateEditField("Hand-in Item IDs (comma):", -425),
+    progItems = QuestKeeperDBAddon.CreateEditField("In Progress Item IDs (comma):", -470),
+    xp        = QuestKeeperDBAddon.CreateEditField("XP:", -515),
+    money     = QuestKeeperDBAddon.CreateEditField("Money (Copper):", -560),
+    rep       = QuestKeeperDBAddon.CreateEditField("Reputation (Faction:Value):", -605)
 }
 
--- About / GitHub Button
-local aboutBtn = CreateFrame("Button", nil, listFrame, "UIPanelButtonTemplate")
-aboutBtn:SetSize(60, 22)
-aboutBtn:SetPoint("TOPRIGHT", listFrame.CloseButton, "TOPLEFT", -5, 0)
-aboutBtn:SetText("About")
-
-aboutBtn:SetScript("OnClick", function()
-    StaticPopup_Show("QUESTKEEPER_GITHUB_LINK")
-end)
-
--- Tooltip
-aboutBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("QuestKeeper Info")
-    GameTooltip:AddLine("Click to view GitHub link and version info.", 1, 1, 1)
-    GameTooltip:Show()
-end)
-aboutBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
--- About button click event
-aboutBtn:SetScript("OnClick", function()
-    StaticPopup_Show("QUESTKEEPER_GITHUB_LINK")
-end)
-
+-- About Popup
 StaticPopupDialogs["QUESTKEEPER_GITHUB_LINK"] = {
-    text = "QuestKeeper (v." .. (C_AddOns.GetAddOnMetadata("QuestKeeper", "Version") or "?") .. ")\n\nVisit the project on GitHub for more info or support!",
+    text = "QuestKeeper (v." .. version .. ")\n\nVisit the project on GitHub for more info or support!",
     button1 = "Close",
     hasEditBox = true,
     editBoxWidth = 280,
     OnShow = function(self)
-        self.EditBox:SetText("https://github.com/Ivan-825/QuestKeeper")
-        self.EditBox:HighlightText()
-        self.EditBox:SetFocus()
+        self.EditBox:SetText("https://github.com")
+        self.EditBox:HighlightText(); self.EditBox:SetFocus()
     end,
-    EditBoxOnEscapePressed = function(self)
-        StaticPopup_Hide("QUESTKEEPER_GITHUB_LINK")
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true, -- Ez engedi az Escape gombot
-    enterClicksFirstButton = true, -- Enterre is bezáródik
-    preferredIndex = 3,
+    EditBoxOnEscapePressed = function(self) StaticPopup_Hide("QUESTKEEPER_GITHUB_LINK") end,
+    timeout = 0, whileDead = true, hideOnEscape = true, enterClicksFirstButton = true, preferredIndex = 3,
 }
+
+-- Pagination Scripts
+detailFrame.prevGossip:SetScript("OnClick", function()
+    if QuestKeeperDBAddon.currentGossipIndex > 1 then
+        QuestKeeperDBAddon.currentGossipIndex = QuestKeeperDBAddon.currentGossipIndex - 1
+        if QuestKeeperDBAddon.UpdateDetailDisplay then QuestKeeperDBAddon.UpdateDetailDisplay() end
+        PlaySound(829)
+    end
+end)
+
+detailFrame.nextGossip:SetScript("OnClick", function()
+    local q = QuestKeeperDBAddon.GetCurrentQuest and QuestKeeperDBAddon.GetCurrentQuest()
+    if q and q.gossips and QuestKeeperDBAddon.currentGossipIndex < #q.gossips then
+        QuestKeeperDBAddon.currentGossipIndex = QuestKeeperDBAddon.currentGossipIndex + 1
+        if QuestKeeperDBAddon.UpdateDetailDisplay then QuestKeeperDBAddon.UpdateDetailDisplay() end
+        PlaySound(829)
+    end
+end)

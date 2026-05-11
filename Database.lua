@@ -269,136 +269,29 @@ function QuestKeeperDBAddon.UpdateList()
 
         local displayStatus = statusMap[data.status] or "Unknown"
         b.colID:SetText(data.id)
-        b.colTitle:SetText((data.title or "Unknown") .. (data.isEdited and " |cff00ff00(edited)|r" or ""))
+        local titleText = data.title or "Unknown"
+        if data.isDaily then
+            titleText = "|cff00ccff[D] |r" .. titleText
+        elseif data.isRepeatable then
+            titleText = "|cff00ff00[R] |r" .. titleText
+        end
+        
+        b.colTitle:SetText(titleText .. (data.isEdited and " |cff00ff00 (Edited import)|r" or ""))
         b.colStatus:SetText(displayStatus)
         b.colDate:SetText(data.displayDate or "Unknown")
         
-       b:SetScript("OnClick", function()
-            local titleText = data.title or "Unknown"
-            local displayTitle = titleText
+        b:SetScript("OnClick", function()
+            -- 1. State update
+            QuestKeeperDBAddon.selectedQuestID = data.id
+            QuestKeeperDBAddon.currentGossipIndex = 1
             
-            -- Format quest types (Daily = Blue, Repeatable = Green)
-            if data.isDaily then
-                displayTitle = "|cff00ccff" .. titleText .. " [Daily]|r"
-            elseif data.isRepeatable then
-                displayTitle = "|cff00ff00" .. titleText .. " [Repeatable]|r"
-            end
-
-            QuestDetailDisplay.TitleText:SetText(titleText)
-            local html = "<html><body><h1 align='center'>"..displayTitle.."</h1>"
-            html = html.."<p align='center'>ID: "..data.id.." | Status: "..data.status.."</p>"
-            
-            html = html.."<p align='center'>|cffaaaaaaDiscovered:|r "..(data.discoveredDate or "Unknown").."</p>"
-            html = html.."<p align='center'>|cffaaaaaaAccepted:|r "..(data.acceptedDate or "Unknown").."</p>"
-            html = html.."<p align='center'>|cffaaaaaaCompleted/Abandoned:|r "..(data.completedDate or "Unknown").."</p><br/>"
-            
-            html = html.."<p>|cff00ff00[Introduction]:|r<br/>"..(Sanitize(data.introduction) or "No data").."</p><br/>"
-            
-            html = html.."<p>|cff00ff00[Objectives]:|r<br/>"..(Sanitize(data.description) or "No data").."</p>"
-            if data.handInItems and #data.handInItems > 0 then 
-                for _, id in pairs(data.handInItems) do html = html..QuestKeeperDBAddon.GetItemHTML(id, "Requires:") end 
-            end
-            html = html.."<br/>"
-            
-            html = html.."<p>|cff00ff00[Rewards]:|r</p>"
-            if data.xp and data.xp > 0 then html = html.."<p>XP: "..data.xp.."</p>" end
-            if data.money and data.money > 0 then html = html.."<p>Money: "..GetCoinTextureString(data.money).."</p>" end
-            if data.rep and data.rep ~= "" then html = html.."<p>|cffa335eeReputation:|r "..data.rep.."</p>" end
-            
-            -- SKILL REWARDS
-            if data.skillReward then
-                local skillIcon = "|T" .. (data.skillReward.tex or 134400) .. ":16:16:0:0|t"
-                html = html .. string.format("<p>Grants: %s |cffffff00%s|r (+%d)</p>", 
-                    skillIcon, data.skillReward.name, data.skillReward.amount)
-            end
-
-            -- CURRENCIES 
-            if data.awards and #data.awards > 0 then 
-                for _, award in pairs(data.awards) do 
-                    html = html .. QuestKeeperDBAddon.GetItemHTML(award.id, "Grants:", true) 
-                end 
+            -- 2. Call the new formatter
+            if QuestKeeperDBAddon.UpdateDetailDisplay then
+                QuestKeeperDBAddon.UpdateDetailDisplay()
             end
             
-            -- ITEM REWARDS
-            if data.rewardItems and #data.rewardItems > 0 then 
-                for _, id in pairs(data.rewardItems) do html = html..QuestKeeperDBAddon.GetItemHTML(id, "Grants:") end 
-            end
-            html = html.."<br/>"
-
-            -- In Progress
-            html = html.."<p>|cff00ff00[In Progress]:|r<br/>"..(Sanitize(data.progressText) or "No data").."</p>"
-            if data.progItems and #data.progItems > 0 then
-                for _, id in pairs(data.progItems) do 
-                    html = html..QuestKeeperDBAddon.GetItemHTML(id, "|cff808080Mentions:|r") 
-                end
-            end
-            html = html.."<br/>"
-
-            -- Completion
-            -- (for daily and repeatable quests show the completions counter)
-            local compHeader = "|cff00ff00[Completion]:|r"
-            if data.isDaily or data.isRepeatable then
-                local count = data.completionCount or 0
-                compHeader = "|cff00ff00[Completion] (" .. count .. " times):|r"
-            end
-            
-            -- Completion text
-            html = html.."<p>"..compHeader.."<br/>"..(Sanitize(data.completionText) or "No data").."</p>"
-            
-            -- Completion history (for daily and repeatable quests only)
-            if (data.isDaily or data.isRepeatable) and data.completionHistory and #data.completionHistory > 0 then
-                html = html .. "<br/><p>|cffaaaaaaHistory:|r</p>"
-                for _, d in ipairs(data.completionHistory) do
-                    html = html .. "<p> - " .. d .. "</p>"
-                end
-            end
-            
-            html = html .. "</body></html>"
-            
-            QuestDetailDisplay.content:SetText(html); QuestDetailDisplay:Show()
-
-            if not QuestDetailDisplay.editBtn then
-                QuestDetailDisplay.editBtn = CreateFrame("Button", nil, QuestDetailDisplay, "UIPanelButtonTemplate")
-                QuestDetailDisplay.editBtn:SetSize(80, 25); QuestDetailDisplay.editBtn:SetPoint("BOTTOMRIGHT", -15, 10); QuestDetailDisplay.editBtn:SetText("Edit")
-            end
-            local editBtn = QuestDetailDisplay.editBtn
-            editBtn:SetShown(data.isImported or data.isEdited)
-            
-            editBtn:SetScript("OnClick", function()
-                QuestKeeperDBAddon.eFields.title:SetText(data.title or "")
-                QuestKeeperDBAddon.eFields.intro:SetText(data.introduction or "")
-                QuestKeeperDBAddon.eFields.desc:SetText(data.description or "")
-                QuestKeeperDBAddon.eFields.prog:SetText(data.progressText or "")
-                QuestKeeperDBAddon.eFields.comp:SetText(data.completionText or "")
-                QuestKeeperDBAddon.eFields.xp:SetText(tostring(data.xp or ""))
-                QuestKeeperDBAddon.eFields.rep:SetText(data.rep or "")
-                QuestKeeperDBAddon.eFields.rewards:SetText(table.concat(data.rewardItems or {}, ","))
-                QuestKeeperDBAddon.eFields.objs:SetText(table.concat(data.handInItems or {}, ","))
-                QuestKeeperDBAddon.eFields.progItems:SetText(table.concat(data.progItems or {}, ","))
-
-                if QuestKeeperDBAddon.saveBtn then
-                    QuestKeeperDBAddon.saveBtn:SetScript("OnClick", function()
-                        data.title = QuestKeeperDBAddon.eFields.title:GetText()
-                        data.introduction = QuestKeeperDBAddon.eFields.intro:GetText()
-                        data.description = QuestKeeperDBAddon.eFields.desc:GetText()
-                        data.progressText = QuestKeeperDBAddon.eFields.prog:GetText()
-                        data.completionText = QuestKeeperDBAddon.eFields.comp:GetText()
-                        data.xp = tonumber(QuestKeeperDBAddon.eFields.xp:GetText()) or 0
-                        data.rep = QuestKeeperDBAddon.eFields.rep:GetText()
-                        data.isEdited = true
-
-                        data.rewardItems = {}
-                        for id in QuestKeeperDBAddon.eFields.rewards:GetText():gmatch("([^,]+)") do table.insert(data.rewardItems, tonumber(id)) end
-                        data.handInItems = {}
-                        for id in QuestKeeperDBAddon.eFields.objs:GetText():gmatch("([^,]+)") do table.insert(data.handInItems, tonumber(id)) end
-                        data.progItems = {}
-                        for id in QuestKeeperDBAddon.eFields.progItems:GetText():gmatch("([^,]+)") do table.insert(data.progItems, tonumber(id)) end
-
-                        QuestEditFrame:Hide(); QuestKeeperDBAddon.UpdateList(); b:Click()
-                    end)
-                end
-                QuestEditFrame:Show()
-            end)
+            -- 3. Show the frame
+            QuestDetailDisplay:Show()
         end)
     end
     scrollChild:SetHeight(#dataList * 26 + 10)
