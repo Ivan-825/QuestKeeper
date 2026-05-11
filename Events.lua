@@ -12,7 +12,6 @@ local function GetOrCreateQuest(qID)
             completedDate="Unknown", timestamp=time(), completionCount=0, 
             completionHistory={}, isDaily=false, isRepeatable=false, isImported=false,
             gossips = {}, objectives = "", description = "",
-            isImported = false
         } 
     end
     QuestKeeperDB[qID].isImported = false
