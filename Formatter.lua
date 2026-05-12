@@ -5,8 +5,8 @@ local statusMap = {
     abandoned  = "|cffff0000Abandoned|r"
 }
 
-function QuestKeeperDBAddon.UpdateDetailDisplay()
-    local qID = QuestKeeperDBAddon.selectedQuestID
+function QuestKeeper.UpdateDetailDisplay()
+    local qID = QuestKeeper.selectedQuestID
     local q = QuestKeeperDB[qID]
     
     if not q then return end
@@ -38,31 +38,31 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
     local numG = (q.gossips and #q.gossips) or 0
     if numG > 1 then
         QuestDetailDisplay.gossipHeader:Show()
-        QuestDetailDisplay.gossipPageText:SetText(string.format("Introduction %d / %d", QuestKeeperDBAddon.currentGossipIndex, numG))
-        QuestDetailDisplay.prevGossip:SetEnabled(QuestKeeperDBAddon.currentGossipIndex > 1)
-        QuestDetailDisplay.nextGossip:SetEnabled(QuestKeeperDBAddon.currentGossipIndex < numG)
+        QuestDetailDisplay.gossipPageText:SetText(string.format("Introduction %d / %d", QuestKeeper.currentGossipIndex, numG))
+        QuestDetailDisplay.prevGossip:SetEnabled(QuestKeeper.currentGossipIndex > 1)
+        QuestDetailDisplay.nextGossip:SetEnabled(QuestKeeper.currentGossipIndex < numG)
     else
         QuestDetailDisplay.gossipHeader:Hide()
     end
 
     -- 4. Construct HTML Content
-    local currentGossip = (q.gossips and q.gossips[QuestKeeperDBAddon.currentGossipIndex]) or q.introduction or "No introduction recorded."
+    local currentGossip = (q.gossips and q.gossips[QuestKeeper.currentGossipIndex]) or q.introduction or "No introduction recorded."
     
     local html = "<html><body>"
     
     -- INTRODUCTION
-    html = html .. "<p>|cff00ff00[Introduction]:|r<br/>" .. Sanitize(currentGossip) .. "</p><br/>"
+    html = html .. "<p>|cff00ff00[Introduction]:|r<br/>" .. QuestKeeper.Sanitize(currentGossip) .. "</p><br/>"
     
     -- DESCRIPTION
-    html = html .. "<p>|cff00ff00[Description]:|r<br/>" .. Sanitize(q.description) .. "</p><br/>"
+    html = html .. "<p>|cff00ff00[Description]:|r<br/>" .. QuestKeeper.Sanitize(q.description) .. "</p><br/>"
     
     -- OBJECTIVES
-    html = html .. "<p>|cff00ff00[Objectives]:|r<br/>" .. Sanitize(q.objectives) .. "</p>"
+    html = html .. "<p>|cff00ff00[Objectives]:|r<br/>" .. QuestKeeper.Sanitize(q.objectives) .. "</p>"
 
     -- Hand-in Items
     if q.handInItems and #q.handInItems > 0 then
         for _, id in ipairs(q.handInItems) do
-            html = html .. QuestKeeperDBAddon.GetItemHTML(id, "|cff888888Requires:|r")
+            html = html .. QuestKeeper.GetItemHTML(id, "|cff888888Requires:|r")
         end
     end
     html = html .. "<br/>"
@@ -82,13 +82,13 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
         -- Reward Items
         if q.rewardItems then
             for _, id in ipairs(q.rewardItems) do
-                html = html .. QuestKeeperDBAddon.GetItemHTML(id, "|cff888888Grants:|r")
+                html = html .. QuestKeeper.GetItemHTML(id, "|cff888888Grants:|r")
             end
         end
 
         if q.awards then
             for _, info in ipairs(q.awards) do
-                html = html .. QuestKeeperDBAddon.GetItemHTML(info.id, "|cff888888Currencies:|r", true)
+                html = html .. QuestKeeper.GetItemHTML(info.id, "|cff888888Currencies:|r", true)
             end
         end
 
@@ -124,10 +124,10 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
 
     -- IN PROGRESS
     if q.progressText ~= "" or (q.progItems and #q.progItems > 0) then
-        html = html .. "<p>|cff00ff00[In Progress]:|r<br/>" .. Sanitize(q.progressText) .. "</p>"
+        html = html .. "<p>|cff00ff00[In Progress]:|r<br/>" .. QuestKeeper.Sanitize(q.progressText) .. "</p>"
         if q.progItems and #q.progItems > 0 then
             for _, id in ipairs(q.progItems) do
-                html = html .. QuestKeeperDBAddon.GetItemHTML(id, "|cff888888Mentions:|r")
+                html = html .. QuestKeeper.GetItemHTML(id, "|cff888888Mentions:|r")
             end
         end
         html = html .. "<br/>"
@@ -135,7 +135,7 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
     
     -- COMPLETION
     local compHeader = (q.isDaily or q.isRepeatable) and ("[Completion] (" .. (q.completionCount or 0) .. " times):") or "[Completion]:"
-    html = html .. "<p>|cff00ff00" .. compHeader .. "|r<br/>" .. Sanitize(q.completionText) .. "</p>"
+    html = html .. "<p><br/>|cff00ff00" .. compHeader .. "|r<br/>" .. QuestKeeper.Sanitize(q.completionText) .. "</p>"
 
     -- HISTORY
     if (q.isDaily or q.isRepeatable) and q.completionHistory and #q.completionHistory > 0 then

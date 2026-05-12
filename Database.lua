@@ -5,7 +5,7 @@ local statusMap = {
             abandoned  = "|cffff0000Abandoned|r"
         }
 
-function QuestKeeperDBAddon.ValidateDatabase()
+function QuestKeeper.ValidateDatabase()
     local numEntries = C_QuestLog.GetNumQuestLogEntries()
     for i = 1, numEntries do
         local info = C_QuestLog.GetInfo(i)
@@ -30,7 +30,7 @@ function QuestKeeperDBAddon.ValidateDatabase()
                     progressText = "",
                     completionText = "",
                     discoveredDate = "Unknown", 
-                    acceptedDate = QuestKeeperDBAddon.GetDate and QuestKeeperDBAddon.GetDate() or "Unknown", 
+                    acceptedDate = QuestKeeper.GetDate and QuestKeeper.GetDate() or "Unknown", 
                     completedDate = "Unknown",
                     displayDate = "Unknown",
                     xp = 0, 
@@ -118,21 +118,21 @@ local function CreateHeader(text, width, xOffset, sortKey)
     h.sortKey = sortKey
     h.baseText = text
     h:SetScript("OnClick", function()
-        if QuestKeeperDBAddon.currentSort.column == sortKey then
-            QuestKeeperDBAddon.currentSort.order = (QuestKeeperDBAddon.currentSort.order == "asc") and "desc" or "asc"
+        if QuestKeeper.currentSort.column == sortKey then
+            QuestKeeper.currentSort.order = (QuestKeeper.currentSort.order == "asc") and "desc" or "asc"
         else
-            QuestKeeperDBAddon.currentSort.column = sortKey
-            QuestKeeperDBAddon.currentSort.order = "asc"
+            QuestKeeper.currentSort.column = sortKey
+            QuestKeeper.currentSort.order = "asc"
         end
-        QuestKeeperDBAddon.UpdateList()
+        QuestKeeper.UpdateList()
     end)
-    QuestKeeperDBAddon.headers[sortKey] = h
+    QuestKeeper.headers[sortKey] = h
 end
 
-function QuestKeeperDBAddon.UpdateList()
+function QuestKeeper.UpdateList()
     if not QuestListFrame or not QuestListScrollFrame then return end
     
-    if not QuestKeeperDBAddon.headers["id"] then
+    if not QuestKeeper.headers["id"] then
         local function CreateHeader(text, width, xOffset, sortKey)
             local h = CreateFrame("Button", nil, QuestListFrame)
             h:SetSize(width, 25); h:SetPoint("TOPLEFT", xOffset, -58)
@@ -140,14 +140,14 @@ function QuestKeeperDBAddon.UpdateList()
             h.text:SetPoint("LEFT", 5, 0); h.text:SetText(text)
             h.sortKey, h.baseText = sortKey, text
             h:SetScript("OnClick", function()
-                if QuestKeeperDBAddon.currentSort.column == sortKey then
-                    QuestKeeperDBAddon.currentSort.order = (QuestKeeperDBAddon.currentSort.order == "asc" and "desc" or "asc")
+                if QuestKeeper.currentSort.column == sortKey then
+                    QuestKeeper.currentSort.order = (QuestKeeper.currentSort.order == "asc" and "desc" or "asc")
                 else
-                    QuestKeeperDBAddon.currentSort.column, QuestKeeperDBAddon.currentSort.order = sortKey, "asc"
+                    QuestKeeper.currentSort.column, QuestKeeper.currentSort.order = sortKey, "asc"
                 end
-                QuestKeeperDBAddon.UpdateList()
+                QuestKeeper.UpdateList()
             end)
-            QuestKeeperDBAddon.headers[sortKey] = h
+            QuestKeeper.headers[sortKey] = h
         end
         CreateHeader("ID", 60, 20, "id")
         CreateHeader("Quest Name", 350, 80, "title")
@@ -155,22 +155,22 @@ function QuestKeeperDBAddon.UpdateList()
         CreateHeader("Last Updated", 150, 530, "timestamp")
     end
 
-    local scrollChild = QuestKeeperDBAddon.listContent
+    local scrollChild = QuestKeeper.listContent
     if not scrollChild then
         scrollChild = CreateFrame("Frame", nil, QuestListScrollFrame)
-        QuestKeeperDBAddon.listContent = scrollChild
+        QuestKeeper.listContent = scrollChild
         QuestListScrollFrame:SetScrollChild(scrollChild)
     end
     scrollChild:SetSize(700, 1)
 
-    for key, h in pairs(QuestKeeperDBAddon.headers) do
-        local arrow = (QuestKeeperDBAddon.currentSort.column == key) and (QuestKeeperDBAddon.currentSort.order == "asc" and " [^]" or " [v]") or ""
+    for key, h in pairs(QuestKeeper.headers) do
+        local arrow = (QuestKeeper.currentSort.column == key) and (QuestKeeper.currentSort.order == "asc" and " [^]" or " [v]") or ""
         h.text:SetText(h.baseText .. arrow)
     end
 
-    for _, b in pairs(QuestKeeperDBAddon.buttons) do b:Hide() end
+    for _, b in pairs(QuestKeeper.buttons) do b:Hide() end
 
-    local searchText = (QuestKeeperDBAddon.searchBox and QuestKeeperDBAddon.searchBox:GetText() or ""):lower()
+    local searchText = (QuestKeeper.searchBox and QuestKeeper.searchBox:GetText() or ""):lower()
     local dataList = {}
     local totalQuests = 0
 
@@ -209,8 +209,8 @@ function QuestKeeperDBAddon.UpdateList()
     
     table.sort(dataList, function(a, b)
         if not a or not b then return false end
-        local col = QuestKeeperDBAddon.currentSort.column
-        local order = QuestKeeperDBAddon.currentSort.order
+        local col = QuestKeeper.currentSort.column
+        local order = QuestKeeper.currentSort.order
 
         -- For timestamps: Unknow should always be at the bottom of the list, no matter if asc or desc ordering
         if col == "timestamp" then
@@ -248,18 +248,18 @@ function QuestKeeperDBAddon.UpdateList()
         return tostring(a.id) < tostring(b.id)
     end)
 
-    if QuestKeeperDBAddon.searchCount then
+    if QuestKeeper.searchCount then
         if searchText == "" then
-            QuestKeeperDBAddon.searchCount:SetText(string.format("%d/%d", totalQuests, totalQuests))
+            QuestKeeper.searchCount:SetText(string.format("%d/%d", totalQuests, totalQuests))
         else
-            QuestKeeperDBAddon.searchCount:SetText(string.format("%d/%d", #dataList, totalQuests))
+            QuestKeeper.searchCount:SetText(string.format("%d/%d", #dataList, totalQuests))
         end
     end
 
     for i, data in ipairs(dataList) do
-        local b = QuestKeeperDBAddon.buttons[i] or CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
+        local b = QuestKeeper.buttons[i] or CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
         b:SetSize(690, 25); b:SetPoint("TOPLEFT", 5, -(i-1)*26); b:Show()
-        QuestKeeperDBAddon.buttons[i] = b
+        QuestKeeper.buttons[i] = b
         if not b.colID then
             b.colID = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); b.colID:SetPoint("LEFT", 10, 0)
             b.colTitle = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); b.colTitle:SetPoint("LEFT", 75, 0)
@@ -282,12 +282,12 @@ function QuestKeeperDBAddon.UpdateList()
         
         b:SetScript("OnClick", function()
             -- 1. State update
-            QuestKeeperDBAddon.selectedQuestID = data.id
-            QuestKeeperDBAddon.currentGossipIndex = 1
+            QuestKeeper.selectedQuestID = data.id
+            QuestKeeper.currentGossipIndex = 1
             
             -- 2. Call the new formatter
-            if QuestKeeperDBAddon.UpdateDetailDisplay then
-                QuestKeeperDBAddon.UpdateDetailDisplay()
+            if QuestKeeper.UpdateDetailDisplay then
+                QuestKeeper.UpdateDetailDisplay()
             end
             
             -- 3. Show the frame

@@ -4,7 +4,7 @@
 ## Author: Ivan-825
 ## Notes: A comprehensive quest chronicler that tracks dialogue, rewards, reputation for all discovered, accepted, completed, or abandoned quests with timestamps for each stage.
 ## Version: 1.0.3b
-## SavedVariables: QuestKeeperDB, QuestKeeperSettings
+## SavedVariables: QuestKeeperDB, QuestKeeperSettings, QuestKeeperConfig
 
 Init.lua
 Helpers.lua

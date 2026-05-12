@@ -1,5 +1,5 @@
 -- Text Sanitization for safe HTML texts
-function Sanitize(text)
+function QuestKeeper.Sanitize(text)
     if not text or text == "" or text == "No data" then return "No data recorded." end
     local clean = text
     
@@ -23,7 +23,7 @@ function Sanitize(text)
 end
 
 -- Handle both Items and Currencies
-function QuestKeeperDBAddon.GetItemHTML(id, label, isCurrency)
+function QuestKeeper.GetItemHTML(id, label, isCurrency)
     if not id or id == 0 then return "" end
     
     if isCurrency then
@@ -48,7 +48,7 @@ function QuestKeeperDBAddon.GetItemHTML(id, label, isCurrency)
 end
 
 -- Tooltip handling for all link types
-function QuestKeeperDBAddon.HandleHyperlinkEnter(self, link)
+function QuestKeeper.HandleHyperlinkEnter(self, link)
     if not link then return end
     GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
     
@@ -60,7 +60,7 @@ function QuestKeeperDBAddon.HandleHyperlinkEnter(self, link)
     end
 end
 
-function GetQuestReputationRewards(qID)
+function GetPredictedQuestReputationRewards(qID)
     local repEntries = {}
     local numRepRewards = GetNumQuestLogRewardFactions and GetNumQuestLogRewardFactions(qID) or 0
     
@@ -76,7 +76,7 @@ function GetQuestReputationRewards(qID)
 
                 if factionName and amount and amount > 0 then
                     -- Keep raw amount for now, we will overwrite with CHAT_MSG later
-                    table.insert(repEntries, factionName .. " (+" .. amount/100 .. ")(??)")
+                    table.insert(repEntries, factionName .. " (+" .. amount/100 .. ")(?)")
                 end
             end
         end
@@ -86,7 +86,7 @@ function GetQuestReputationRewards(qID)
         local numF = GetNumRewardFactions and GetNumRewardFactions() or 0
         for i = 1, numF do
             local name, _, amount = GetRewardFactionInfo(i)
-            if name then table.insert(repEntries, name .. " (+" .. amount .. ")(??)") end
+            if name then table.insert(repEntries, name .. " (+" .. amount .. ")(?)") end
         end
     end
     return table.concat(repEntries, ", ")

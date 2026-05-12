@@ -108,9 +108,11 @@ local function UpdateRewardData(qID)
         fetchLinks(GetNumQuestItems(), "required", q.handInItems)
         
         -- 6. Modern Reputation Detection (Priority)
-        q.rep = GetQuestReputationRewards(qID)
+        if q.status ~= "completed" then
+            q.rep = GetPredictedQuestReputationRewards(qID)
+        end
         
-        if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
+        if QuestKeeper.UpdateList then QuestKeeper.UpdateList() end
     end)
 end
 
@@ -138,7 +140,7 @@ Handlers["QUEST_DETAIL"] = function()
         q.title = GetTitleText()
         q.description = GetQuestText()
         q.objectives = GetObjectiveText()
-        q.discoveredDate, q.timestamp = QuestKeeperDBAddon.GetDate(), time()
+        q.discoveredDate, q.timestamp = QuestKeeper.GetDate(), time()
 
         if not q.gossips then q.gossips = {} end
         
@@ -173,7 +175,7 @@ Handlers["QUEST_PROGRESS"] = function()
                     if itemID then table.insert(q.progItems, itemID) end
                 end
             end
-            if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
+            if QuestKeeper.UpdateList then QuestKeeper.UpdateList() end
         end
     end)
 end
@@ -182,18 +184,31 @@ Handlers["QUEST_COMPLETE"] = function()
     local qID = SafeGetQuestID()
     local q = GetOrCreateQuest(qID)
     if q then
+        -- Save text and rewards, but not don't change the status
         lastCompletedID, lastCompletedTime = qID, GetTime()
-        q.timestamp = time()
-        q.status = "completed"
-        q.completedDate = QuestKeeperDBAddon.GetDate()
         q.completionText = GetRewardText()
+        UpdateRewardData(qID)
+    end
+end
+
+Handlers["QUEST_TURNED_IN"] = function(qID, xp, money)
+    local q = GetOrCreateQuest(qID)
+    if q then
+        q.status = "completed"
+        q.timestamp = time()
+        q.completedDate = QuestKeeper.GetDate()
+        
+        -- Overwrite with actual values
+        if xp and xp > 0 then q.xp = xp end
+        if money and money > 0 then q.money = money end
+
+        -- Detect repeatable / daily quests
         local isD, isR = GetQuestTypeInfo(qID)
         if isD or isR then
             q.completionCount = (q.completionCount or 0) + 1
             if not q.completionHistory then q.completionHistory = {} end
             table.insert(q.completionHistory, q.completedDate)
         end
-        UpdateRewardData(qID)
     end
 end
 
@@ -202,7 +217,7 @@ Handlers["QUEST_ACCEPTED"] = function(qID)
     if q then
         q.timestamp = time()
         q.status = "inProgress"
-        q.acceptedDate = QuestKeeperDBAddon.GetDate() 
+        q.acceptedDate = QuestKeeper.GetDate() 
     end
 end
 
@@ -212,15 +227,15 @@ Handlers["QUEST_REMOVED"] = function(qID)
         if q then 
             q.timestamp = time()
             q.status = "abandoned"
-            q.completedDate = QuestKeeperDBAddon.GetDate() 
+            q.completedDate = QuestKeeper.GetDate() 
         end
     end
 end
 
 Handlers["CHAT_MSG_COMBAT_FACTION_CHANGE"] = function(msg)
     -- Using the correct scope for lastCompletedID/Time
-    local lastID = lastCompletedID or QuestKeeperDBAddon.lastCompletedID
-    local lastTime = lastCompletedTime or QuestKeeperDBAddon.lastCompletedTime
+    local lastID = lastCompletedID or QuestKeeper.lastCompletedID
+    local lastTime = lastCompletedTime or QuestKeeper.lastCompletedTime
 
     -- Check if a quest was completed in the last 3 seconds
     if lastID and lastTime and (GetTime() - lastTime) < 3 then
@@ -234,6 +249,7 @@ Handlers["CHAT_MSG_COMBAT_FACTION_CHANGE"] = function(msg)
             local q = QuestKeeperDB[lastID]
             if q then
                 local exactRep = faction .. " (+" .. amount .. ")"
+                print("Current q.rep: ", q.rep)
                 
                 if q.rep and q.rep ~= "" then
                     -- Escape faction name for safe pattern matching
@@ -245,19 +261,23 @@ Handlers["CHAT_MSG_COMBAT_FACTION_CHANGE"] = function(msg)
                         local safeFaction = faction:gsub("([%^%$%%%.%*%+%-%?%[%]])", "%%%1")
                         
                         -- This pattern finds the faction name and everything until a comma or end of string.
-                        -- It effectively removes the predicted part like "Faction (+5) (??)" 
+                        -- It effectively removes the predicted part like "Faction (+5) (?)" 
                         -- and prepares it to be replaced by the exact value.
                         local pattern = safeFaction .. "[^,]*"
                         q.rep = q.rep:gsub(pattern, exactRep)
                     else
-                        -- Faction was not predicted: append with (?)
-                        q.rep = q.rep .. ", " .. exactRep .. " (?)"
+                        -- Faction was not predicted: append with (??)
+                        q.rep = q.rep .. ", " .. exactRep .. " (??)"
                     end
+                else
+                    q.rep = exactRep .. " (??)"
                 end
 
+                print("Current q.rep: ", q.rep)
+
                 -- Refresh UI if the selected quest is the one being updated
-                if QuestKeeperDBAddon.selectedQuestID == lastID then
-                    QuestKeeperDBAddon.UpdateDetailDisplay()
+                if QuestKeeper.selectedQuestID == lastID then
+                    QuestKeeper.UpdateDetailDisplay()
                 end
             end
         end
@@ -266,7 +286,7 @@ end
 
 Handlers["ADDON_LOADED"] = function(name)
     if name == "QuestKeeper" then
-        C_Timer.After(2, function() QuestKeeperDBAddon.ValidateDatabase() end)
+        C_Timer.After(2, function() QuestKeeper.ValidateDatabase() end)
     end
 end
 
