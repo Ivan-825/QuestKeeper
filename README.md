@@ -1,7 +1,9 @@
 # QuestKeeper *(v.1.0.2)*
 
-## **INTRODUCTION**
-The creation of the addon was motivated by the situation I have to face regularly when playing wow: Just as I finish the quest, head over to the NPC, click the Complete Quest button, and then find myself in a situation where I have no idea what is going on, and why are the previously friendly NPC grumpy with scarlet nameplates. It's a bad habit, ruins the experience and the player misses out on the lore and the humor of the game - It still happens from time to time. With this addon, the user is able to read back the details, the story of the given quest. And if I already added support for that, why not satisfy my appreciation of statistics, and track as many things regarding each quest as possible?
+*A comprehensive quest chronicler that tracks dialogue, rewards, reputation for all discovered, accepted, completed, or abandoned quests with timestamps for each stage.*
+
+## **WHY?**
+The creation of the addon was motivated by me having to face the situation while playing WoW quite regularly: I finish the quest, head over to the NPC, click the Complete Quest button, and then find myself in situations where I have no idea what is going on, like why are the previously friendly NPCs grumpy with scarlet nameplates. While it might be that the user is to take the blame for not reading the quest details (missing out on the story of the quest, game lore) - It still happens from time to time. With this addon, the user is able to read back the details, the story of the given quest. And if I already track that much of each quest, why not satisfy the needs of a collector and track as many things regarding each quest as possible? This addon was originally meant for self-use only, but as currently no other addon offers this detailed tracking, I thought others might find this helpful too. 
 
 ## **FUNCTIONALITY**
 
@@ -9,7 +11,8 @@ The creation of the addon was motivated by the situation I have to face regularl
 * For each quest, timestamp is saved for each state.
 * Introduction, In-progress and Completion dialogs are all saved automatically while the addon is enabled.
 * Reward / hand in items and currencies are tracked automatically.
-* Reward xp and gold is tracked automatically.
+* Reward profession skill points are saved upon quest discovery.
+* Reward xp and gold is tracked automatically, upon quest discovery.
 * Reputation reward is saved upon completion.
 * Quests, completed without the addon being active are also partially imported and tracked - only quest id can be recovered from the game api.
 * Manual editing is possible for imported quests, but not for properly tracked quests.
@@ -26,6 +29,12 @@ The creation of the addon was motivated by the situation I have to face regularl
 
 ## **PLANNED FEATURES**
 * Independent quest tracking for separate characters, with option to combine all characters QuestKeeper database.
+  * Track which characters have completed a specific quest
+  * Ensure the correct character name appears in dialogue texts.
+* Track dialogue during cutscenes
+* Properly track conversations for quests that require player to talk to NPCs
+* Track the quest givers name
+* Track the location of the task
 
 ## **LICENSE**
 All rights reserved, for now at least.
