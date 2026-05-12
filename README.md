@@ -24,9 +24,10 @@ The creation of the addon was motivated by me having to face the situation while
 * Currently only supports Game Version 12.0.5 (Midnight)
 
 ## **KNOWN ISSUES**
+> *Found a bug? Need help? Open a ticket here to receive support and help the development: https://github.com/Ivan-825/QuestKeeper/issues*
 * Amount is not yet tracked for reward currencies
 * Text does not fit in textarea when editing imported quests
-* **Only predicted reputational values are shown under rewards, the actual values are not saved.**
+* **Only predicted reputational values are shown under rewards, the actual values are not saved.** - only in v1.0.3-beta, in v1.0.2 it does save the actual values, but the method used for that was more prone to error than this new approach, but this still needs some more work. 
 
 ## **PLANNED FEATURES**
 * Independent quest tracking for separate characters, with option to combine all characters QuestKeeper database.
