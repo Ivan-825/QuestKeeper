@@ -1,4 +1,4 @@
-# QuestKeeper *(v.1.0.2)*
+# QuestKeeper *(v.1.0.3b)*
 
 *A comprehensive quest chronicler that tracks dialogue, rewards, reputation for all discovered, accepted, completed, or abandoned quests with timestamps for each stage.*
 
@@ -26,6 +26,7 @@ The creation of the addon was motivated by me having to face the situation while
 ## **KNOWN ISSUES**
 * Amount is not yet tracked for reward currencies
 * Text does not fit in textarea when editing imported quests
+* **Only predicted reputational values are shown under rewards, the actual values are not saved.**
 
 ## **PLANNED FEATURES**
 * Independent quest tracking for separate characters, with option to combine all characters QuestKeeper database.
