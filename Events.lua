@@ -1,175 +1,294 @@
 local f = CreateFrame("Frame")
-f:RegisterAllEvents()
-f:RegisterEvent("QUEST_FINISHED")
-f:RegisterEvent("CHAT_MSG_COMBAT_FACTION_CHANGE")
-
 local sessionProcessed = {}
 local lastCompletedID = nil
 local lastCompletedTime = 0
 
-local function GetQuestType(qID)
-    local isDaily, isRepeatable, freq = false, false, 0
-    if not qID then return isDaily, isRepeatable, freq end
-    
-    local numAvailable = GetNumAvailableQuests and GetNumAvailableQuests() or 0
-    for i=1, numAvailable do
-        local t, _, isD, _, isR = GetAvailableQuestInfo(i)
-        if t == GetTitleText() then isDaily, isRepeatable, freq = isD, isR, (isD and 1 or (isR and 2 or 0)) end
+local function GetOrCreateQuest(qID)
+    if not qID or qID <= 0 then return nil end
+    if not QuestKeeperDB[qID] then 
+        QuestKeeperDB[qID] = { 
+            status="discovered", rewardItems={}, handInItems={}, progItems={}, compItems={}, 
+            xp=0, money=0, rep="", discoveredDate="Unknown", acceptedDate="Unknown", 
+            completedDate="Unknown", timestamp=time(), completionCount=0, 
+            completionHistory={}, isDaily=false, isRepeatable=false, isImported=false,
+            gossips = {}, objectives = "", description = "",
+        } 
     end
-    
-    local numActive = GetNumActiveQuests and GetNumActiveQuests() or 0
-    for i=1, numActive do
-        local t, _, isD, _, isR = GetActiveQuestInfo(i)
-        if t == GetTitleText() then isDaily, isRepeatable, freq = isD, isR, (isD and 1 or (isR and 2 or 0)) end
-    end
-
-    if not isDaily and C_QuestLog then
-        if C_QuestLog.IsQuestDaily and C_QuestLog.IsQuestDaily(qID) then isDaily, freq = true, 1 end
-        if C_QuestLog.GetQuestTagInfo then
-            local tag = C_QuestLog.GetQuestTagInfo(qID)
-            if tag then
-                if tag.tagID == Enum.QuestTag.Daily then isDaily, freq = true, 1
-                elseif tag.tagID == Enum.QuestTag.Repeatable then isRepeatable, freq = true, 2 end
-            end
-        end
-    end
-    
-    if not isDaily and not isRepeatable and C_QuestLog and C_QuestLog.GetLogIndexForQuestID then
-        local idx = C_QuestLog.GetLogIndexForQuestID(qID)
-        if idx then
-            local info = C_QuestLog.GetInfo(idx)
-            if info then 
-                freq = info.frequency or 0
-                if freq == 1 then isDaily = true elseif freq == 2 then isRepeatable = true end
-            end
-        end
-    end
-    return isDaily, isRepeatable, freq
+    QuestKeeperDB[qID].isImported = false
+    return QuestKeeperDB[qID]
 end
 
-f:SetScript("OnEvent", function(self, event, arg1)
-    if event == "QUEST_FINISHED" then sessionProcessed = {} return end
+local function GetQuestTypeInfo(qID)
+    local isDaily, isRepeatable = false, false
+    if not qID then return isDaily, isRepeatable end
 
-    if event == "ADDON_LOADED" and arg1 == "QuestKeeper" then
-        C_Timer.After(2, function() QuestKeeperDBAddon.ValidateDatabase() end)
-        return
+    -- 1. Check via Tag Info (Most reliable for modern WoW)
+    local tagInfo = C_QuestLog.GetQuestTagInfo(qID)
+    if tagInfo then
+        if tagInfo.tagID == Enum.QuestTag.Daily then
+            isDaily = true
+        elseif tagInfo.tagID == Enum.QuestTag.Repeatable then
+            isRepeatable = true
+        end
     end
 
-    if event == "CHAT_MSG_COMBAT_FACTION_CHANGE" then
-        if lastCompletedID and (GetTime() - lastCompletedTime) < 2 then
-            local msg = arg1
-            local p1 = FACTION_STANDING_INCREASED:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
-            local p2 = FACTION_STANDING_INCREASED_GENERIC:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
-            local faction, amount = msg:match(p1)
-            if not faction then faction, amount = msg:match(p2) end
-            if faction and amount then
-                local q = QuestKeeperDB[lastCompletedID]
-                if q then
-                    local newRep = faction .. " (+" .. amount .. ")"
-                    if not q.rep or q.rep == "" then q.rep = newRep
-                    elseif not q.rep:find(faction) then q.rep = q.rep .. ", " .. newRep end
-                    if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
+    -- 2. Fallback via Quest Log info (if quest is accepted)
+    if not isDaily and not isRepeatable then
+        local questIndex = C_QuestLog.GetLogIndexForQuestID(qID)
+        if questIndex then
+            local info = C_QuestLog.GetInfo(questIndex)
+            if info then
+                if info.frequency == Enum.QuestFrequency.Daily then
+                    isDaily = true
+                elseif info.frequency == Enum.QuestFrequency.Repeatable then
+                    isRepeatable = true
                 end
             end
         end
-        return
     end
 
-    local qID = (event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED") and arg1 or GetQuestID()
-    if not qID or qID == 0 then return end
-    
-    if not QuestKeeperDB[qID] then 
-        QuestKeeperDB[qID] = { status="discovered", rewardItems={}, handInItems={}, progItems={}, compItems={}, xp=0, money=0, rep="", discoveredDate="Unknown", acceptedDate="Unknown", completedDate="Unknown", timestamp=time(), completionCount=0, completionHistory={}, isDaily=false, isRepeatable=false } 
-    end
-    
-    local q = QuestKeeperDB[qID]
-    q.timestamp = time()
-    q.isImported = false
+    return isDaily, isRepeatable
+end
 
-    local isD, isR = GetQuestType(qID)
-    if q.status == "completed" and (isD or isR) then
-        if not sessionProcessed[qID] then
-            q.status = "discovered"
-            sessionProcessed[qID] = true
+local function SafeGetQuestID()
+    local id = GetQuestID()
+    if (not id or id <= 0) then
+        local title = GetTitleText()
+        if title and title ~= "" then
+            for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+                local info = C_QuestLog.GetInfo(i)
+                if info and info.title == title then return info.questID end
+            end
         end
     end
+    return id
+end
 
-    -- Save information that is accessible right away
-    if event == "QUEST_DETAIL" then
-        q.title = GetTitleText();
-        q.introduction, q.description, q.discoveredDate = GetQuestText(), GetObjectiveText(), QuestKeeperDBAddon.GetDate()
-    end
-
-    if event == "QUEST_DETAIL" or event == "QUEST_COMPLETE" then
-        if event == "QUEST_COMPLETE" then lastCompletedID, lastCompletedTime = qID, GetTime() end
-
-        local isD, isR, fVal = GetQuestType(qID)
-        if isD then q.isDaily, q.isRepeatable = true, false elseif isR then q.isDaily, q.isRepeatable = false, true end
-
-        -- wait to make sure blizzard api returns details
-        C_Timer.After(0.4, function()
-            local isD2, isR2 = GetQuestType(qID)
-            if isD2 then q.isDaily, q.isRepeatable = true, false elseif isR2 then q.isDaily, q.isRepeatable = false, true end
-
-            if event == "QUEST_DETAIL" then
-                q.xp, q.money = GetRewardXP(), GetRewardMoney()
-                q.rewardItems, q.handInItems = {}, {}
-
-                local sName, sTex, sPoints = GetRewardSkillPoints()
-                if sName and type(sPoints) == "number" and sPoints > 0 then
-                    q.skillReward = { name = sName, tex = sTex, amount = sPoints }
+local function UpdateRewardData(qID)
+    local q = GetOrCreateQuest(qID)
+    if not q then return end
+    
+    C_Timer.After(0.4, function()
+        -- 1. Identify Quest Type
+        local isD, isR = GetQuestTypeInfo(qID)
+        q.isDaily, q.isRepeatable = isD, isR
+        
+        -- 2. Basic Rewards
+        q.xp, q.money = GetRewardXP(), GetRewardMoney()
+        q.rewardItems, q.handInItems = {}, {}
+        
+        -- 3. Skill Rewards
+        local sName, sTex, sPoints = GetRewardSkillPoints()
+        if sName and type(sPoints) == "number" and sPoints > 0 then
+            q.skillReward = { name = sName, tex = sTex, amount = sPoints }
+        end
+        
+        -- 4. Currency Rewards
+        local currencies = C_QuestLog.GetQuestRewardCurrencies(qID)
+        if currencies then
+            q.awards = {}
+            for _, info in ipairs(currencies) do
+                table.insert(q.awards, { id = info.currencyID, name = info.name, amount = info.totalRewardAmount, tex = info.texture })
+            end
+        end
+        
+        -- 5. Item Links (Choices, Rewards, and Required)
+        local function fetchLinks(num, typeStr, target)
+            if not num or num == 0 then return end
+            for i=1, num do
+                local s, l = pcall(GetQuestItemLink, typeStr, i)
+                if s and l then 
+                    local itemID = tonumber(l:match("item:(%d+)"))
+                    if itemID then table.insert(target, itemID) end
                 end
+            end
+        end
+        fetchLinks(GetNumQuestChoices(), "choice", q.rewardItems)
+        fetchLinks(GetNumQuestRewards(), "reward", q.rewardItems)
+        fetchLinks(GetNumQuestItems(), "required", q.handInItems)
+        
+        -- 6. Modern Reputation Detection (Priority)
+        q.rep = GetQuestReputationRewards(qID)
+        
+        if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
+    end)
+end
 
-                local currencies = C_QuestLog.GetQuestRewardCurrencies(qID)
-                if currencies and #currencies > 0 then
-                    q.awards = {}
-                    for _, info in ipairs(currencies) do
-                        table.insert(q.awards, { id = info.currencyID, name = info.name, amount = info.totalRewardAmount, tex = info.texture })
+local Handlers = {}
+
+Handlers["GOSSIP_SHOW"] = function()
+    local text = ""
+    if C_GossipInfo and C_GossipInfo.GetText then
+        text = C_GossipInfo.GetText()
+    elseif GetGossipText then
+        text = GetGossipText()
+    end
+    
+    if text and text ~= "" then 
+        f.lastGossip = text 
+    end
+end
+
+Handlers["QUEST_DETAIL"] = function()
+    local qID = SafeGetQuestID()
+    local q = GetOrCreateQuest(qID)
+    if q then
+        q.timestamp = time()
+        q.status = "discovered"
+        q.title = GetTitleText()
+        q.description = GetQuestText()
+        q.objectives = GetObjectiveText()
+        q.discoveredDate, q.timestamp = QuestKeeperDBAddon.GetDate(), time()
+
+        if not q.gossips then q.gossips = {} end
+        
+        if f.lastGossip then
+            local found = false
+            for _, val in ipairs(q.gossips) do
+                if val == f.lastGossip then found = true break end
+            end
+            if not found then table.insert(q.gossips, f.lastGossip) end
+        end
+        UpdateRewardData(qID)
+    end
+end
+
+Handlers["QUEST_PROGRESS"] = function()
+    C_Timer.After(0.15, function()
+        local qID = SafeGetQuestID()
+        local q = GetOrCreateQuest(qID)
+        if q then
+            q.timestamp = time()
+            local text = GetProgressText()
+            if text and text ~= "" then
+                q.progressText = text
+                q.status = "inProgress"
+            end
+            q.progItems = {}
+            local n = GetNumQuestItems() or 0
+            for i = 1, n do 
+                local s, l = pcall(GetQuestItemLink, "required", i)
+                if s and l then 
+                    local itemID = tonumber(l:match("item:(%d+)"))
+                    if itemID then table.insert(q.progItems, itemID) end
+                end
+            end
+            if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
+        end
+    end)
+end
+
+Handlers["QUEST_COMPLETE"] = function()
+    local qID = SafeGetQuestID()
+    local q = GetOrCreateQuest(qID)
+    if q then
+        lastCompletedID, lastCompletedTime = qID, GetTime()
+        q.timestamp = time()
+        q.status = "completed"
+        q.completedDate = QuestKeeperDBAddon.GetDate()
+        q.completionText = GetRewardText()
+        local isD, isR = GetQuestTypeInfo(qID)
+        if isD or isR then
+            q.completionCount = (q.completionCount or 0) + 1
+            if not q.completionHistory then q.completionHistory = {} end
+            table.insert(q.completionHistory, q.completedDate)
+        end
+        UpdateRewardData(qID)
+    end
+end
+
+Handlers["QUEST_ACCEPTED"] = function(qID)
+    local q = GetOrCreateQuest(qID)
+    if q then
+        q.timestamp = time()
+        q.status = "inProgress"
+        q.acceptedDate = QuestKeeperDBAddon.GetDate() 
+    end
+end
+
+Handlers["QUEST_REMOVED"] = function(qID)
+    if not C_QuestLog.IsQuestFlaggedCompleted(qID) then
+        local q = GetOrCreateQuest(qID)
+        if q then 
+            q.timestamp = time()
+            q.status = "abandoned"
+            q.completedDate = QuestKeeperDBAddon.GetDate() 
+        end
+    end
+end
+
+Handlers["CHAT_MSG_COMBAT_FACTION_CHANGE"] = function(msg)
+    -- Using the correct scope for lastCompletedID/Time
+    local lastID = lastCompletedID or QuestKeeperDBAddon.lastCompletedID
+    local lastTime = lastCompletedTime or QuestKeeperDBAddon.lastCompletedTime
+
+    -- Check if a quest was completed in the last 3 seconds
+    if lastID and lastTime and (GetTime() - lastTime) < 3 then
+        -- Patterns for different localizations and generic gains
+        local p1 = FACTION_STANDING_INCREASED:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
+        local p2 = FACTION_STANDING_INCREASED_GENERIC:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
+        
+        local faction, amount = msg:match(p1) or msg:match(p2)
+
+        if faction and amount then
+            local q = QuestKeeperDB[lastID]
+            if q then
+                local exactRep = faction .. " (+" .. amount .. ")"
+                
+                if q.rep and q.rep ~= "" then
+                    -- Escape faction name for safe pattern matching
+                    local safeFaction = faction:gsub("([%^%$%%%.%*%+%-%?%[%]])", "%%%1")
+                    
+                    -- If the faction exists in the string (as a predicted value)
+                    if q.rep:find(faction, 1, true) then
+                        -- Escape faction name for safe pattern matching
+                        local safeFaction = faction:gsub("([%^%$%%%.%*%+%-%?%[%]])", "%%%1")
+                        
+                        -- This pattern finds the faction name and everything until a comma or end of string.
+                        -- It effectively removes the predicted part like "Faction (+5) (??)" 
+                        -- and prepares it to be replaced by the exact value.
+                        local pattern = safeFaction .. "[^,]*"
+                        q.rep = q.rep:gsub(pattern, exactRep)
+                    else
+                        -- Faction was not predicted: append with (?)
+                        q.rep = q.rep .. ", " .. exactRep .. " (?)"
                     end
                 end
 
-                local nC = GetNumQuestChoices and GetNumQuestChoices() or 0
-                for i=1, nC do local s,l = pcall(GetQuestItemLink,"choice",i) if s and l then table.insert(q.rewardItems, tonumber(strmatch(l,"item:(%d+)"))) end end
-                local nR = GetNumQuestRewards and GetNumQuestRewards() or 0
-                for i=1, nR do local s,l = pcall(GetQuestItemLink,"reward",i) if s and l then table.insert(q.rewardItems, tonumber(strmatch(l,"item:(%d+)"))) end end
-                local nI = GetNumQuestItems and GetNumQuestItems() or 0
-                for i=1, nI do local s,l = pcall(GetQuestItemLink,"required",i) if s and l then table.insert(q.handInItems, tonumber(strmatch(l,"item:(%d+)"))) end end
-            else
-                q.status, q.completedDate = "completed", QuestKeeperDBAddon.GetDate()
-                q.xp, q.money = GetRewardXP(), GetRewardMoney()
-                q.completionText = GetRewardText()
-                if q.isDaily or q.isRepeatable then
-                    q.completionCount = (q.completionCount or 0) + 1
-                    if not q.completionHistory then q.completionHistory = {} end
-                    table.insert(q.completionHistory, QuestKeeperDBAddon.GetDate())
+                -- Refresh UI if the selected quest is the one being updated
+                if QuestKeeperDBAddon.selectedQuestID == lastID then
+                    QuestKeeperDBAddon.UpdateDetailDisplay()
                 end
             end
-            
-            local rData = ""
-            local nF = GetNumRewardFactions and GetNumRewardFactions() or 0
-            for i=1, nF do 
-                local n, _, g = GetRewardFactionInfo(i)
-                if n then rData = rData .. n .. " (+" .. g .. "), " end 
-            end
-            if rData ~= "" then q.rep = rData:sub(1, -3) end
+        end
+    end
+end
 
-            if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
-        end)
-    elseif event == "QUEST_ACCEPTED" then q.status, q.acceptedDate = "inProgress", QuestKeeperDBAddon.GetDate()
-    elseif event == "QUEST_PROGRESS" then 
-        q.progressText, q.progItems = GetProgressText(), {}
-        local nI = GetNumQuestItems and GetNumQuestItems() or 0
-        for i=1, nI do local s, l = pcall(GetQuestItemLink, "required", i) if s and l then table.insert(q.progItems, tonumber(strmatch(l, "item:(%d+)"))) end end
-    elseif event == "QUEST_COMPLETE" then
-        q.compItems = {}
-        local nC = GetNumQuestChoices and GetNumQuestChoices() or 0
-        for i=1, nC do local s,l = pcall(GetQuestItemLink,"choice",i) if s and l then table.insert(q.compItems, tonumber(strmatch(l,"item:(%d+)"))) end end
-    elseif event == "QUEST_REMOVED" and not C_QuestLog.IsQuestFlaggedCompleted(qID) then q.status, q.completedDate = "abandoned", QuestKeeperDBAddon.GetDate() end
+Handlers["ADDON_LOADED"] = function(name)
+    if name == "QuestKeeper" then
+        C_Timer.After(2, function() QuestKeeperDBAddon.ValidateDatabase() end)
+    end
+end
+
+f:SetScript("OnEvent", function(self, event, ...)
+    if event == "QUEST_FINISHED" then sessionProcessed = {} return end
+    if Handlers[event] then Handlers[event](...) end
 end)
 
-QuestListFrame:SetScript("OnShow", function() PlaySound(829) end)
-QuestListFrame:SetScript("OnHide", function() PlaySound(830); QuestDetailDisplay:Hide(); QuestEditFrame:Hide() end)
-QuestDetailDisplay:SetScript("OnShow", function() PlaySound(829) end)
-QuestDetailDisplay:SetScript("OnHide", function() PlaySound(830) end)
-QuestEditFrame:SetScript("OnShow", function() PlaySound(829) end)
-QuestEditFrame:SetScript("OnHide", function() PlaySound(830) end)
+for event in pairs(Handlers) do f:RegisterEvent(event) end
+f:RegisterEvent("QUEST_FINISHED")
+
+local function AttachSounds(frame)
+    if not frame then return end
+    frame:HookScript("OnShow", function() PlaySound(829) end)
+    frame:HookScript("OnHide", function() PlaySound(830) end)
+end
+
+AttachSounds(QuestListFrame)
+AttachSounds(QuestDetailDisplay)
+AttachSounds(QuestEditFrame)
+
+QuestListFrame:HookScript("OnHide", function() 
+    QuestDetailDisplay:Hide()
+    QuestEditFrame:Hide() 
+end)
