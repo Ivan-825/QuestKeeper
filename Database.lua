@@ -69,21 +69,17 @@ function QuestKeeper.UpdateActiveQuests()
                     local intro, objectives = GetQuestLogQuestText(questIndex)
                     
                     -- Only save if the text actually exists and is not empty
-                    if intro and intro ~= "" then q.introduction = intro end
-                    if objectives and objectives ~= "" then q.description = objectives end
+                    if objectives and objectives ~= "" then q.objectives = objectives end
                     
                     -- Only save rewards if they are greater than zero
                     local xp = GetQuestLogRewardXP(qID) or 0
                     local money = GetQuestLogRewardMoney(qID) or 0
-                    if xp > 0 then q.xp = xp end
-                    if money > 0 then q.money = money end
+                    q.xp = (xp > 0) and xp or nil
+                    q.money = (money > 0) and money or nil
                     
                     -- Setup frequency flags cleanly
-                    if info.frequency == Enum.QuestFrequency.Daily then 
-                        q.isDaily = true
-                    elseif info.frequency == Enum.QuestFrequency.Repeatable then 
-                        q.isRepeatable = true 
-                    end
+                    q.isDaily = (info.frequency == Enum.QuestFrequency.Daily) and true or nil
+                    q.isRepeatable = (info.frequency == Enum.QuestFrequency.Repeatable) and true or nil
                 end
             end
         end
@@ -182,10 +178,18 @@ function QuestKeeper.UpdateList()
            displayDate:lower():find(searchText, 1, true) or
            (dateSearchThreshold ~= "" and dateOnlyNumbers:find(dateSearchThreshold, 1, true)) then
             
-            local entry = data
-            entry.id = id
-            entry.displayDate = displayDate
-            table.insert(dataList, entry)
+            -- Create a shallow copy to protect the global QuestKeeperDB from sorting corruption
+            table.insert(dataList, {
+                id = id,
+                title = data.title,
+                status = data.status,
+                timestamp = data.timestamp,
+                isImported = data.isImported,
+                isDaily = data.isDaily,
+                isRepeatable = data.isRepeatable,
+                isEdited = data.isEdited,
+                displayDate = displayDate
+            })
         end
     end
     

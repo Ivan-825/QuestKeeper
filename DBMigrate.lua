@@ -1,39 +1,13 @@
-function QuestKeeper.MigrateDatabase()
-    if not QuestKeeperConfig then QuestKeeperConfig = {dbVersion = 1} end
-    
-    local current = QuestKeeperConfig.dbVersion
-    local target = QuestKeeper.LATEST_DB_VERSION
-
-    if not (current or target) then
-        print("|cffff4d4d[CRITICAL] QuestKeeper:|r Failed to migrate database due to missing db version metadata. Functionality is going to degrade overtime unless fixed.")
-        print("|cffabd473Find help here:|r |cff00ccffhttps://github.com/Ivan-825/QuestKeeper|r")
-        return
-    end
-
-    if current >= target then return end
-
-    QuestKeeper.DB_STATE = QuestKeeper.DB_STATES.MIGRATING
-
-    print("|cffabd473QuestKeeper:|r Starting database migration (v" .. current .. " -> v" .. target .. ")...")
-
-    -- Sequential execution of local migration functions
-    if current < 2 then
-        --Migrate_v1_to_v2()
-        current = 2
-    end
-
-    --QuestKeeperConfig.dbVersion = current
-    print("|cffabd473QuestKeeper:|r Migration complete. Now at v" .. current)
-end
-
-
-
-
-
-
--- Documenting: Converts legacy string reputation to structured tables and applies sparse data principles
+-- Documenting: Converts legacy string reputation to structured tables, resolves faction IDs, and applies sparse data principles
 local function Migrate_v1_to_v2()
-    --print("|cffabd473QuestKeeper:|r Step 1: Parsing reputation records and cleaning legacy databases...")
+    -- Create a one-time localized lookup table for active faction IDs to maintain maximum efficiency
+    local factionLookup = {}
+    for i = 1, C_Reputation.GetNumFactions() do
+        local factionInfo = C_Reputation.GetFactionDataByIndex(i)
+        if factionInfo and factionInfo.name and factionInfo.factionID then
+            factionLookup[factionInfo.name] = factionInfo.factionID
+        end
+    end
     
     for qID, data in pairs(QuestKeeperDB) do
         if type(data) == "table" then
@@ -50,18 +24,28 @@ local function Migrate_v1_to_v2()
                     elseif status == "??" then
                         repState = QuestKeeper.REP_STATES.UNEXPECTED
                     end
+
+                    local trimmedFaction = faction:gsub("^%s*", ""):gsub("%s*$", "")
+                    local resolvedID = factionLookup[trimmedFaction] -- Attempt to resolve numeric ID from cached list
+
                     table.insert(reputation, {
-                        faction = faction:gsub("^%s*", ""):gsub("%s*$", ""), -- Trim white spaces
+                        factionID = resolvedID, -- Can be nil if the character hasn't discovered the faction yet
+                        faction = trimmedFaction,
                         amount = tonumber(amount) or 0,
                         state = repState
                     })
                 end
             end
 
-            -- 3. Overwrite the old string field with our new table (or nil if empty to enforce Sparse Data)
+            -- 3. Overwrite the old string field with our new table
             data.rep = reputation
+
+            -- 4. Move legacy introduction text to description field
+            if data.introduction and data.introduction ~= "" and data.introduction ~= "N/A (Imported)" then
+                data.description = data.introduction
+            end
            
-            -- 3. SPARSE DATA CLEANUP: Drop empty structures to reduce disk footprint and load times
+            -- 5. SPARSE DATA CLEANUP: Drop empty structures to reduce disk footprint and load times
             if data.rep and #data.rep == 0 then data.rep = nil end
             if data.gossips and #data.gossips == 0 then data.gossips = nil end
             if data.rewardItems and #data.rewardItems == 0 then data.rewardItems = nil end
@@ -85,19 +69,27 @@ local function Migrate_v1_to_v2()
             if data.isDaily == false then data.isDaily = nil end
             if data.isRepeatable == false then data.isRepeatable = nil end
             if data.isImported == false then data.isImported = nil end
+
+            -- Explicitly clean up introduction field after migration data movement
+            data.introduction = nil
         end
     end
 end
 
--- Documenting: Main orchestration entry point for incremental, safe updates
+
+--[[
+==================================================================================================================
+==================================================================================================================
+==================================================================================================================
+]]
+
 function QuestKeeper.MigrateDatabase()
-    if not QuestKeeperConfig then QuestKeeperConfig = { dbVersion = 1 } end
+    if not QuestKeeperConfig then QuestKeeperConfig = {dbVersion = 1} end
     
     local current = QuestKeeperConfig.dbVersion
     local target = QuestKeeper.LATEST_DB_VERSION
 
-    if not current or not target then
-        QuestKeeper.DB_STATE = QuestKeeper.DB_STATES.LOCKED
+    if not (current and target) then
         print("|cffff4d4d[CRITICAL] QuestKeeper:|r Failed to migrate database due to missing db version metadata. Functionality is going to degrade overtime unless fixed.")
         print("|cffabd473Find help here:|r |cff00ccffhttps://github.com/Ivan-825/QuestKeeper|r")
         return
@@ -106,6 +98,7 @@ function QuestKeeper.MigrateDatabase()
     if current >= target then return end
 
     QuestKeeper.DB_STATE = QuestKeeper.DB_STATES.MIGRATING
+
     print("|cffabd473QuestKeeper:|r Starting database migration (v" .. current .. " -> v" .. target .. ")...")
 
     -- Sequential execution of local migration functions
@@ -113,9 +106,6 @@ function QuestKeeper.MigrateDatabase()
         Migrate_v1_to_v2()
         current = 2
     end
-
-    -- Future hooks go here cleanly:
-    -- if current < 3 then Migrate_v2_to_v3() current = 3 end
 
     QuestKeeperConfig.dbVersion = current
     print("|cffabd473QuestKeeper:|r Migration complete. Now at v" .. current)

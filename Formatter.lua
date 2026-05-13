@@ -11,6 +11,8 @@ function QuestKeeper.UpdateDetailDisplay()
     
     if not q then return end
 
+    if not QuestKeeper.currentGossipIndex or QuestKeeper.lastSelectedQuestID ~= qID then QuestKeeper.currentGossipIndex = 1; QuestKeeper.lastSelectedQuestID = qID end
+
     -- 1. Fixed Header (Title)
     local titleText = q.title or "Unknown Quest"
     if q.isDaily then
@@ -46,7 +48,7 @@ function QuestKeeper.UpdateDetailDisplay()
     end
 
     -- 4. Construct HTML Content
-    local currentGossip = (q.gossips and q.gossips[QuestKeeper.currentGossipIndex]) or q.introduction or "No introduction recorded."
+    local currentGossip = (type(q.gossips) == "table" and q.gossips[QuestKeeper.currentGossipIndex]) or "No introduction recorded."
     
     local html = "<html><body>"
     
@@ -99,31 +101,44 @@ function QuestKeeper.UpdateDetailDisplay()
         end
 
         -- Reputation
+                -- Reputation
         if q.rep and #q.rep > 0 then
             local isCompleted = (q.status == "completed")
             local lines = {}
 
-            for _, repData in ipairs(q.rep) do
+            for idx, repData in ipairs(q.rep) do
                 local faction = repData.faction or "Unknown"
                 local amount = repData.amount or 0
                 local state = repData.state
 
-                local lineText = string.format("%s (+%d)", faction, amount)
+                -- Determine sign and directional math automatically
+                local sign = (amount >= 0) and "+" or "-"
+                local isDecrease = (amount < 0)
+
+                -- Absolute value for clean layout string binding
+                local displayAmount = math.abs(amount)
+                local lineText = string.format("%s (%s%d)", faction, sign, displayAmount)
                 local color = ""
                 local suffix = ""
 
-                -- Apply styling rules based on the reputation record state
+                -- Apply precise directional styling rules based on the state and progression
                 if state == QuestKeeper.REP_STATES.PREDICTION then
-                    -- Faint yellow during progress, turns gray upon completion
-                    color = isCompleted and "|cff888888" or "|cffeee8aa"
+                    if isDecrease then
+                        color = isCompleted and "|cff888888" or "|cffcd7f32"
+                    else
+                        color = isCompleted and "|cff888888" or "|cffeee8aa"
+                    end
                     suffix = " (?)"
                 elseif state == QuestKeeper.REP_STATES.UNEXPECTED then
                     -- Always gray to signify unconfirmed or unexpected data
                     color = "|cff888888"
                     suffix = " (??)"
                 elseif state == QuestKeeper.REP_STATES.ACTUAL then
-                    -- Uses default UI gold text color without overrides
-                    color = ""
+                    if isDecrease then
+                        color = "|cffff4500"
+                    else
+                        color = ""
+                    end
                     suffix = ""
                 end
 
@@ -133,6 +148,8 @@ function QuestKeeper.UpdateDetailDisplay()
                     formattedLine = color .. formattedLine .. "|r"
                 end
 
+                -- Wrap in a safe hyperlink token passing array index for tooltips
+                formattedLine = string.format("<a href=\"qkrep:%d\">%s</a>", idx, formattedLine)
                 table.insert(lines, formattedLine)
             end
 
@@ -167,9 +184,19 @@ function QuestKeeper.UpdateDetailDisplay()
     html = html .. "</body></html>"
 
     -- Render and Scroll update
-    QuestDetailDisplay.content:SetHeight(0)
     QuestDetailDisplay.content:SetText(html)
-    QuestDetailDisplay.content:SetHeight(QuestDetailDisplay.content:GetContentHeight() + 50)
+    QuestDetailDisplay.content:SetHeight(math.max(100, QuestDetailDisplay.content:GetContentHeight() + 50))
+
+    -- Show edit button if imported quest
+    if QuestDetailDisplay.editBtn then
+        if q.isImported then
+            QuestDetailDisplay.editBtn:Show()
+        else
+            QuestDetailDisplay.editBtn:Hide()
+        end
+    end
     
-    QuestDetailDisplay:Show()
+    if QuestDetailDisplay:IsShown() then
+        QuestDetailDisplay:Show()
+    end
 end
