@@ -75,8 +75,12 @@ function GetPredictedQuestReputationRewards(qID)
                 end
 
                 if factionName and amount and amount > 0 then
-                    -- Keep raw amount for now, we will overwrite with CHAT_MSG later
-                    table.insert(repEntries, factionName .. " (+" .. amount/100 .. ")(?)")
+                    -- Store structured data using the unified PREDICTION state
+                    table.insert(repEntries, {
+                        faction = factionName,
+                        amount = amount / 100,
+                        state = QuestKeeper.REP_STATES.PREDICTION
+                    })
                 end
             end
         end
@@ -86,8 +90,17 @@ function GetPredictedQuestReputationRewards(qID)
         local numF = GetNumRewardFactions and GetNumRewardFactions() or 0
         for i = 1, numF do
             local name, _, amount = GetRewardFactionInfo(i)
-            if name then table.insert(repEntries, name .. " (+" .. amount .. ")(?)") end
+            if name then 
+                -- Fallback mechanics for active quest completion windows
+                table.insert(repEntries, {
+                    faction = name,
+                    amount = amount,
+                    state = QuestKeeper.REP_STATES.PREDICTION
+                })
+            end
         end
     end
-    return table.concat(repEntries, ", ")
+    
+    -- Returns the structured table
+    return repEntries
 end

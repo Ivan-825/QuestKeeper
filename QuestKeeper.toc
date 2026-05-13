@@ -11,6 +11,7 @@ Helpers.lua
 Formatter.lua
 Frames.lua
 Database.lua
+DBMigrate.lua
 Events.lua
 Minimap.lua
 Commands.lua
