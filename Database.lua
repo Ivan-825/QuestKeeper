@@ -6,98 +6,42 @@ local statusMap = {
         }
 
 function QuestKeeper.ValidateDatabase()
-    local numEntries = C_QuestLog.GetNumQuestLogEntries()
-    for i = 1, numEntries do
-        local info = C_QuestLog.GetInfo(i)
-        if info and info.questID and not info.isHeader and not info.isHidden then
-            local qID = info.questID
-            
-            -- For new Quests
-            if not QuestKeeperDB[qID] then
-                local isDaily = (info.frequency == Enum.QuestFrequency.Daily)
-                local isRepeatable = (info.frequency == Enum.QuestFrequency.Repeatable)
-
-                QuestKeeperDB[qID] = { 
-                    id = qID,
-                    title = info.title or "Unknown", 
-                    status = "inProgress", 
-                    timestamp = time(), 
-                    isImported = false,
-                    isDaily = isDaily,
-                    isRepeatable = isRepeatable,
-                    introduction = "",
-                    description = "",
-                    progressText = "",
-                    completionText = "",
-                    discoveredDate = "Unknown", 
-                    acceptedDate = QuestKeeper.GetDate and QuestKeeper.GetDate() or "Unknown", 
-                    completedDate = "Unknown",
-                    displayDate = "Unknown",
-                    xp = 0, 
-                    money = 0, 
-                    rep = "",
-                    rewardItems = {}, 
-                    handInItems = {},
-                    progItems = {},
-                    compItems = {},
-                    objItems = {},
-                    completionCount = 0,
-                    completionHistory = {}
-                }
+    if QuestKeeperConfig.dbVersion ~= QuestKeeper.LATEST_DB_VERSION then
+        QuestKeeper.DB_STATE = QuestKeeper.DB_STATES.LOCKED
+        
+        -- Lock the table using a metatable
+        setmetatable(QuestKeeperDB, {
+            __newindex = function(t, k, v)
+                -- This function runs whenever someone tries to write: QuestKeeperDB[key] = value
+                -- We do nothing, effectively blocking the write
             end
-
-            -- Update details for in-progress quests
-            local q = QuestKeeperDB[qID]
-            if q.status == "inProgress" and (not q.introduction or q.introduction == "") then
-                local questIndex = C_QuestLog.GetLogIndexForQuestID(qID)
-                if questIndex then
-                    local intro, objectives = GetQuestLogQuestText(questIndex)
-                    q.introduction = intro or ""
-                    q.description = objectives or ""
-                    q.xp = GetQuestLogRewardXP(qID) or 0
-                    q.money = GetQuestLogRewardMoney(qID) or 0
-                    
-                    if info.frequency == 1 then q.isDaily = true
-                    elseif info.frequency == 2 then q.isRepeatable = true end
-                end
-            end
-        end
+        })
+        return
     end
+    QuestKeeper.DB_STATE = QuestKeeper.DB_STATES.READY
+end
 
-    -- Recover quests that were completed at a time when QuestKeeper was not active
+-- Recover quests that were completed at a time when QuestKeeper was not active
+function QuestKeeper.ImportCompletedQuests()
+    -- Do not import if DB not ready
+    if QuestKeeper.DB_STATE ~= QuestKeeper.DB_STATES.READY then return end
+
     local allCompleted = C_QuestLog.GetAllCompletedQuestIDs()
     local importCount = 0
     if allCompleted then
         for _, qID in ipairs(allCompleted) do
             if not QuestKeeperDB[qID] then
-                importCount = importCount + 1
-                QuestKeeperDB[qID] = { 
-                    id = qID,
-                    title = C_QuestLog.GetTitleForQuestID(qID) or "Imported", 
-                    status = "completed", 
-                    isImported = true, 
-                    timestamp = time(), 
-                    isDaily = false,
-                    isRepeatable = false,
-                    introduction = "N/A (Imported)",
-                    description = "N/A (Imported)",
-                    progressText = "",
-                    completionText = "",
-                    discoveredDate = "Unknown", 
-                    acceptedDate = "Unknown", 
-                    completedDate = "Unknown",
-                    displayDate = "Unknown",
-                    xp = 0, 
-                    money = 0, 
-                    rep = "",
-                    rewardItems = {}, 
-                    handInItems = {},
-                    progItems = {},
-                    compItems = {},
-                    objItems = {},
-                    completionCount = 1,
-                    completionHistory = {}
-                }
+                local q = QuestKeeper.GetOrCreateQuest(qID)
+
+                if q then
+                    -- 2. Populate and override only key historical markers (omitting any empty values)
+                    q.title = C_QuestLog.GetTitleForQuestID(qID) or "Imported"
+                    q.status = "completed"
+                    q.isImported = true
+                    q.completionCount = 1
+                    
+                    importCount = importCount + 1
+                end
             end
         end
     end
@@ -105,6 +49,44 @@ function QuestKeeper.ValidateDatabase()
     
     if importCount > 0 then
         print("|cff00ff00QuestKeeper:|r Successfully imported |cffffffff" .. importCount .. "|r quests that were completed while the addon was not enabled / installed.")
+    end
+end
+
+function QuestKeeper.UpdateActiveQuests()
+    if QuestKeeper.DB_STATE ~= QuestKeeper.DB_STATES.READY then return end
+
+    local numEntries = C_QuestLog.GetNumQuestLogEntries()
+    for i = 1, numEntries do
+        local info = C_QuestLog.GetInfo(i)
+        if info and info.questID and not info.isHeader and not info.isHidden then
+            local qID = info.questID
+            local q = QuestKeeperDB[qID]
+            
+            -- Only check quests that are tracked as inProgress
+            if q and q.status == "inProgress" then
+                local questIndex = C_QuestLog.GetLogIndexForQuestID(qID)
+                if questIndex then
+                    local intro, objectives = GetQuestLogQuestText(questIndex)
+                    
+                    -- Only save if the text actually exists and is not empty
+                    if intro and intro ~= "" then q.introduction = intro end
+                    if objectives and objectives ~= "" then q.description = objectives end
+                    
+                    -- Only save rewards if they are greater than zero
+                    local xp = GetQuestLogRewardXP(qID) or 0
+                    local money = GetQuestLogRewardMoney(qID) or 0
+                    if xp > 0 then q.xp = xp end
+                    if money > 0 then q.money = money end
+                    
+                    -- Setup frequency flags cleanly
+                    if info.frequency == Enum.QuestFrequency.Daily then 
+                        q.isDaily = true
+                    elseif info.frequency == Enum.QuestFrequency.Repeatable then 
+                        q.isRepeatable = true 
+                    end
+                end
+            end
+        end
     end
 end
 

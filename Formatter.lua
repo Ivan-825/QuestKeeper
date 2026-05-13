@@ -99,25 +99,44 @@ function QuestKeeper.UpdateDetailDisplay()
         end
 
         -- Reputation
-        if q.rep and q.rep ~= "" then
+        if q.rep and #q.rep > 0 then
             local isCompleted = (q.status == "completed")
-            
-            -- 1. Format the block: Replace commas with line breaks
-            local repHTML = q.rep:gsub(", ", "<br/>")
+            local lines = {}
 
-            -- 2. Apply colors using a function match
-            -- This matches each "line" and colors it based on the symbols present
-            repHTML = repHTML:gsub("([^<>]+)(<?/?%a*/?>?)", function(line, tag)
-                local result = line
-                if line:find("%%?%%?") then -- (??) Predicted
-                    local color = isCompleted and "|cff888888" or "|cffeee8aa"
-                    result = color .. line .. "|r"
-                elseif line:find("%%?") then -- (?) Unexpected
-                    result = "|cffeee8aa" .. line .. "|r"
+            for _, repData in ipairs(q.rep) do
+                local faction = repData.faction or "Unknown"
+                local amount = repData.amount or 0
+                local state = repData.state
+
+                local lineText = string.format("%s (+%d)", faction, amount)
+                local color = ""
+                local suffix = ""
+
+                -- Apply styling rules based on the reputation record state
+                if state == QuestKeeper.REP_STATES.PREDICTION then
+                    -- Faint yellow during progress, turns gray upon completion
+                    color = isCompleted and "|cff888888" or "|cffeee8aa"
+                    suffix = " (?)"
+                elseif state == QuestKeeper.REP_STATES.UNEXPECTED then
+                    -- Always gray to signify unconfirmed or unexpected data
+                    color = "|cff888888"
+                    suffix = " (??)"
+                elseif state == QuestKeeper.REP_STATES.ACTUAL then
+                    -- Uses default UI gold text color without overrides
+                    color = ""
+                    suffix = ""
                 end
-                return result .. tag -- Verified (No change)
-            end)
 
+                -- Wraps the entire text block including the suffix in the color tags
+                local formattedLine = lineText .. suffix
+                if color ~= "" then
+                    formattedLine = color .. formattedLine .. "|r"
+                end
+
+                table.insert(lines, formattedLine)
+            end
+
+            local repHTML = table.concat(lines, "<br/>")
             html = html .. "<p>|cffa335ee[Reputation]:|r<br/>" .. repHTML .. "</p>"
         end
     end

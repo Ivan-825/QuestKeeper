@@ -3,15 +3,36 @@ local sessionProcessed = {}
 local lastCompletedID = nil
 local lastCompletedTime = 0
 
-local function GetOrCreateQuest(qID)
+function QuestKeeper.OnStartup()
+    -- 1. MIGRATE
+    QuestKeeper.MigrateDatabase()
+    
+    -- 2. VALIDATE
+    if QuestKeeper.DB_STATE ~= QuestKeeper.DB_STATES.LOCKED then
+        QuestKeeper.ValidateDatabase()
+    end
+
+    -- 3. IMPORT
+    if QuestKeeper.DB_STATE == QuestKeeper.DB_STATES.READY then
+        QuestKeeper.ImportCompletedQuests()
+        QuestKeeper.UpdateActiveQuests()
+    end
+
+    -- 4. UI REFRESH
+    QuestKeeper.UpdateList()
+end
+
+function QuestKeeper.GetOrCreateQuest(qID)
+    if QuestKeeper.DB_STATE ~= QuestKeeper.DB_STATES.READY then 
+        return nil 
+    end
     if not qID or qID <= 0 then return nil end
     if not QuestKeeperDB[qID] then 
         QuestKeeperDB[qID] = { 
-            status="discovered", rewardItems={}, handInItems={}, progItems={}, compItems={}, 
-            xp=0, money=0, rep="", discoveredDate="Unknown", acceptedDate="Unknown", 
-            completedDate="Unknown", timestamp=time(), completionCount=0, 
-            completionHistory={}, isDaily=false, isRepeatable=false, isImported=false,
-            gossips = {}, objectives = "", description = "",
+            id = qID,
+            status = "discovered", 
+            discoveredDate = QuestKeeper.GetDate(),
+            timestamp = time(),
         } 
     end
     QuestKeeperDB[qID].isImported = false
@@ -65,7 +86,7 @@ local function SafeGetQuestID()
 end
 
 local function UpdateRewardData(qID)
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if not q then return end
     
     C_Timer.After(0.4, function()
@@ -133,7 +154,7 @@ end
 
 Handlers["QUEST_DETAIL"] = function()
     local qID = SafeGetQuestID()
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if q then
         q.timestamp = time()
         q.status = "discovered"
@@ -158,7 +179,7 @@ end
 Handlers["QUEST_PROGRESS"] = function()
     C_Timer.After(0.15, function()
         local qID = SafeGetQuestID()
-        local q = GetOrCreateQuest(qID)
+        local q = QuestKeeper.GetOrCreateQuest(qID)
         if q then
             q.timestamp = time()
             local text = GetProgressText()
@@ -182,7 +203,7 @@ end
 
 Handlers["QUEST_COMPLETE"] = function()
     local qID = SafeGetQuestID()
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if q then
         -- Save text and rewards, but not don't change the status
         lastCompletedID, lastCompletedTime = qID, GetTime()
@@ -192,7 +213,7 @@ Handlers["QUEST_COMPLETE"] = function()
 end
 
 Handlers["QUEST_TURNED_IN"] = function(qID, xp, money)
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if q then
         q.status = "completed"
         q.timestamp = time()
@@ -213,7 +234,7 @@ Handlers["QUEST_TURNED_IN"] = function(qID, xp, money)
 end
 
 Handlers["QUEST_ACCEPTED"] = function(qID)
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if q then
         q.timestamp = time()
         q.status = "inProgress"
@@ -223,7 +244,7 @@ end
 
 Handlers["QUEST_REMOVED"] = function(qID)
     if not C_QuestLog.IsQuestFlaggedCompleted(qID) then
-        local q = GetOrCreateQuest(qID)
+        local q = QuestKeeper.GetOrCreateQuest(qID)
         if q then 
             q.timestamp = time()
             q.status = "abandoned"
@@ -233,49 +254,46 @@ Handlers["QUEST_REMOVED"] = function(qID)
 end
 
 Handlers["CHAT_MSG_COMBAT_FACTION_CHANGE"] = function(msg)
-    -- Using the correct scope for lastCompletedID/Time
     local lastID = lastCompletedID or QuestKeeper.lastCompletedID
     local lastTime = lastCompletedTime or QuestKeeper.lastCompletedTime
 
-    -- Check if a quest was completed in the last 3 seconds
+    -- Verify that a quest was recently completed within a 3-second window
     if lastID and lastTime and (GetTime() - lastTime) < 3 then
-        -- Patterns for different localizations and generic gains
         local p1 = FACTION_STANDING_INCREASED:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
         local p2 = FACTION_STANDING_INCREASED_GENERIC:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
         
         local faction, amount = msg:match(p1) or msg:match(p2)
+        amount = tonumber(amount)
 
         if faction and amount then
             local q = QuestKeeperDB[lastID]
             if q then
-                local exactRep = faction .. " (+" .. amount .. ")"
-                print("Current q.rep: ", q.rep)
-                
-                if q.rep and q.rep ~= "" then
-                    -- Escape faction name for safe pattern matching
-                    local safeFaction = faction:gsub("([%^%$%%%.%*%+%-%?%[%]])", "%%%1")
-                    
-                    -- If the faction exists in the string (as a predicted value)
-                    if q.rep:find(faction, 1, true) then
-                        -- Escape faction name for safe pattern matching
-                        local safeFaction = faction:gsub("([%^%$%%%.%*%+%-%?%[%]])", "%%%1")
-                        
-                        -- This pattern finds the faction name and everything until a comma or end of string.
-                        -- It effectively removes the predicted part like "Faction (+5) (?)" 
-                        -- and prepares it to be replaced by the exact value.
-                        local pattern = safeFaction .. "[^,]*"
-                        q.rep = q.rep:gsub(pattern, exactRep)
-                    else
-                        -- Faction was not predicted: append with (??)
-                        q.rep = q.rep .. ", " .. exactRep .. " (??)"
-                    end
-                else
-                    q.rep = exactRep .. " (??)"
+                -- Initialize the storage table if it does not exist or was corrupted
+                if type(q.rep) ~= "table" then
+                    q.rep = {}
                 end
 
-                print("Current q.rep: ", q.rep)
+                local factionFound = false
 
-                -- Refresh UI if the selected quest is the one being updated
+                -- Scan existing records to update a predicted entry with the verified data
+                for _, repData in ipairs(q.rep) do
+                    if repData.faction == faction then
+                        repData.amount = amount
+                        repData.state = QuestKeeper.REP_STATES.ACTUAL
+                        factionFound = true
+                        break
+                    end
+                end
+
+                -- Append a new entry if the gained faction was not predicted by the system
+                if not factionFound then
+                    table.insert(q.rep, {
+                        faction = faction,
+                        amount = amount,
+                        state = QuestKeeper.REP_STATES.UNEXPECTED
+                    })
+                end
+
                 if QuestKeeper.selectedQuestID == lastID then
                     QuestKeeper.UpdateDetailDisplay()
                 end
@@ -286,7 +304,7 @@ end
 
 Handlers["ADDON_LOADED"] = function(name)
     if name == "QuestKeeper" then
-        C_Timer.After(2, function() QuestKeeper.ValidateDatabase() end)
+        QuestKeeper.OnStartup()
     end
 end
 
