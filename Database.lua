@@ -5,99 +5,43 @@ local statusMap = {
             abandoned  = "|cffff0000Abandoned|r"
         }
 
-function QuestKeeperDBAddon.ValidateDatabase()
-    local numEntries = C_QuestLog.GetNumQuestLogEntries()
-    for i = 1, numEntries do
-        local info = C_QuestLog.GetInfo(i)
-        if info and info.questID and not info.isHeader and not info.isHidden then
-            local qID = info.questID
-            
-            -- For new Quests
-            if not QuestKeeperDB[qID] then
-                local isDaily = (info.frequency == Enum.QuestFrequency.Daily)
-                local isRepeatable = (info.frequency == Enum.QuestFrequency.Repeatable)
-
-                QuestKeeperDB[qID] = { 
-                    id = qID,
-                    title = info.title or "Unknown", 
-                    status = "inProgress", 
-                    timestamp = time(), 
-                    isImported = false,
-                    isDaily = isDaily,
-                    isRepeatable = isRepeatable,
-                    introduction = "",
-                    description = "",
-                    progressText = "",
-                    completionText = "",
-                    discoveredDate = "Unknown", 
-                    acceptedDate = QuestKeeperDBAddon.GetDate and QuestKeeperDBAddon.GetDate() or "Unknown", 
-                    completedDate = "Unknown",
-                    displayDate = "Unknown",
-                    xp = 0, 
-                    money = 0, 
-                    rep = "",
-                    rewardItems = {}, 
-                    handInItems = {},
-                    progItems = {},
-                    compItems = {},
-                    objItems = {},
-                    completionCount = 0,
-                    completionHistory = {}
-                }
+function QuestKeeper.ValidateDatabase()
+    if QuestKeeperConfig.dbVersion ~= QuestKeeper.LATEST_DB_VERSION then
+        QuestKeeper.DB_STATE = QuestKeeper.DB_STATES.LOCKED
+        
+        -- Lock the table using a metatable
+        setmetatable(QuestKeeperDB, {
+            __newindex = function(t, k, v)
+                -- This function runs whenever someone tries to write: QuestKeeperDB[key] = value
+                -- We do nothing, effectively blocking the write
             end
-
-            -- Update details for in-progress quests
-            local q = QuestKeeperDB[qID]
-            if q.status == "inProgress" and (not q.introduction or q.introduction == "") then
-                local questIndex = C_QuestLog.GetLogIndexForQuestID(qID)
-                if questIndex then
-                    local intro, objectives = GetQuestLogQuestText(questIndex)
-                    q.introduction = intro or ""
-                    q.description = objectives or ""
-                    q.xp = GetQuestLogRewardXP(qID) or 0
-                    q.money = GetQuestLogRewardMoney(qID) or 0
-                    
-                    if info.frequency == 1 then q.isDaily = true
-                    elseif info.frequency == 2 then q.isRepeatable = true end
-                end
-            end
-        end
+        })
+        return
     end
+    QuestKeeper.DB_STATE = QuestKeeper.DB_STATES.READY
+end
 
-    -- Recover quests that were completed at a time when QuestKeeper was not active
+-- Recover quests that were completed at a time when QuestKeeper was not active
+function QuestKeeper.ImportCompletedQuests()
+    -- Do not import if DB not ready
+    if QuestKeeper.DB_STATE ~= QuestKeeper.DB_STATES.READY then return end
+
     local allCompleted = C_QuestLog.GetAllCompletedQuestIDs()
     local importCount = 0
     if allCompleted then
         for _, qID in ipairs(allCompleted) do
             if not QuestKeeperDB[qID] then
-                importCount = importCount + 1
-                QuestKeeperDB[qID] = { 
-                    id = qID,
-                    title = C_QuestLog.GetTitleForQuestID(qID) or "Imported", 
-                    status = "completed", 
-                    isImported = true, 
-                    timestamp = time(), 
-                    isDaily = false,
-                    isRepeatable = false,
-                    introduction = "N/A (Imported)",
-                    description = "N/A (Imported)",
-                    progressText = "",
-                    completionText = "",
-                    discoveredDate = "Unknown", 
-                    acceptedDate = "Unknown", 
-                    completedDate = "Unknown",
-                    displayDate = "Unknown",
-                    xp = 0, 
-                    money = 0, 
-                    rep = "",
-                    rewardItems = {}, 
-                    handInItems = {},
-                    progItems = {},
-                    compItems = {},
-                    objItems = {},
-                    completionCount = 1,
-                    completionHistory = {}
-                }
+                local q = QuestKeeper.GetOrCreateQuest(qID)
+
+                if q then
+                    -- 2. Populate and override only key historical markers (omitting any empty values)
+                    q.title = C_QuestLog.GetTitleForQuestID(qID) or "Imported"
+                    q.status = "completed"
+                    q.isImported = true
+                    q.completionCount = 1
+                    
+                    importCount = importCount + 1
+                end
             end
         end
     end
@@ -105,6 +49,40 @@ function QuestKeeperDBAddon.ValidateDatabase()
     
     if importCount > 0 then
         print("|cff00ff00QuestKeeper:|r Successfully imported |cffffffff" .. importCount .. "|r quests that were completed while the addon was not enabled / installed.")
+    end
+end
+
+function QuestKeeper.UpdateActiveQuests()
+    if QuestKeeper.DB_STATE ~= QuestKeeper.DB_STATES.READY then return end
+
+    local numEntries = C_QuestLog.GetNumQuestLogEntries()
+    for i = 1, numEntries do
+        local info = C_QuestLog.GetInfo(i)
+        if info and info.questID and not info.isHeader and not info.isHidden then
+            local qID = info.questID
+            local q = QuestKeeperDB[qID]
+            
+            -- Only check quests that are tracked as inProgress
+            if q and q.status == "inProgress" then
+                local questIndex = C_QuestLog.GetLogIndexForQuestID(qID)
+                if questIndex then
+                    local intro, objectives = GetQuestLogQuestText(questIndex)
+                    
+                    -- Only save if the text actually exists and is not empty
+                    if objectives and objectives ~= "" then q.objectives = objectives end
+                    
+                    -- Only save rewards if they are greater than zero
+                    local xp = GetQuestLogRewardXP(qID) or 0
+                    local money = GetQuestLogRewardMoney(qID) or 0
+                    q.xp = (xp > 0) and xp or nil
+                    q.money = (money > 0) and money or nil
+                    
+                    -- Setup frequency flags cleanly
+                    q.isDaily = (info.frequency == Enum.QuestFrequency.Daily) and true or nil
+                    q.isRepeatable = (info.frequency == Enum.QuestFrequency.Repeatable) and true or nil
+                end
+            end
+        end
     end
 end
 
@@ -118,21 +96,21 @@ local function CreateHeader(text, width, xOffset, sortKey)
     h.sortKey = sortKey
     h.baseText = text
     h:SetScript("OnClick", function()
-        if QuestKeeperDBAddon.currentSort.column == sortKey then
-            QuestKeeperDBAddon.currentSort.order = (QuestKeeperDBAddon.currentSort.order == "asc") and "desc" or "asc"
+        if QuestKeeper.currentSort.column == sortKey then
+            QuestKeeper.currentSort.order = (QuestKeeper.currentSort.order == "asc") and "desc" or "asc"
         else
-            QuestKeeperDBAddon.currentSort.column = sortKey
-            QuestKeeperDBAddon.currentSort.order = "asc"
+            QuestKeeper.currentSort.column = sortKey
+            QuestKeeper.currentSort.order = "asc"
         end
-        QuestKeeperDBAddon.UpdateList()
+        QuestKeeper.UpdateList()
     end)
-    QuestKeeperDBAddon.headers[sortKey] = h
+    QuestKeeper.headers[sortKey] = h
 end
 
-function QuestKeeperDBAddon.UpdateList()
+function QuestKeeper.UpdateList()
     if not QuestListFrame or not QuestListScrollFrame then return end
     
-    if not QuestKeeperDBAddon.headers["id"] then
+    if not QuestKeeper.headers["id"] then
         local function CreateHeader(text, width, xOffset, sortKey)
             local h = CreateFrame("Button", nil, QuestListFrame)
             h:SetSize(width, 25); h:SetPoint("TOPLEFT", xOffset, -58)
@@ -140,14 +118,14 @@ function QuestKeeperDBAddon.UpdateList()
             h.text:SetPoint("LEFT", 5, 0); h.text:SetText(text)
             h.sortKey, h.baseText = sortKey, text
             h:SetScript("OnClick", function()
-                if QuestKeeperDBAddon.currentSort.column == sortKey then
-                    QuestKeeperDBAddon.currentSort.order = (QuestKeeperDBAddon.currentSort.order == "asc" and "desc" or "asc")
+                if QuestKeeper.currentSort.column == sortKey then
+                    QuestKeeper.currentSort.order = (QuestKeeper.currentSort.order == "asc" and "desc" or "asc")
                 else
-                    QuestKeeperDBAddon.currentSort.column, QuestKeeperDBAddon.currentSort.order = sortKey, "asc"
+                    QuestKeeper.currentSort.column, QuestKeeper.currentSort.order = sortKey, "asc"
                 end
-                QuestKeeperDBAddon.UpdateList()
+                QuestKeeper.UpdateList()
             end)
-            QuestKeeperDBAddon.headers[sortKey] = h
+            QuestKeeper.headers[sortKey] = h
         end
         CreateHeader("ID", 60, 20, "id")
         CreateHeader("Quest Name", 350, 80, "title")
@@ -155,22 +133,22 @@ function QuestKeeperDBAddon.UpdateList()
         CreateHeader("Last Updated", 150, 530, "timestamp")
     end
 
-    local scrollChild = QuestKeeperDBAddon.listContent
+    local scrollChild = QuestKeeper.listContent
     if not scrollChild then
         scrollChild = CreateFrame("Frame", nil, QuestListScrollFrame)
-        QuestKeeperDBAddon.listContent = scrollChild
+        QuestKeeper.listContent = scrollChild
         QuestListScrollFrame:SetScrollChild(scrollChild)
     end
     scrollChild:SetSize(700, 1)
 
-    for key, h in pairs(QuestKeeperDBAddon.headers) do
-        local arrow = (QuestKeeperDBAddon.currentSort.column == key) and (QuestKeeperDBAddon.currentSort.order == "asc" and " [^]" or " [v]") or ""
+    for key, h in pairs(QuestKeeper.headers) do
+        local arrow = (QuestKeeper.currentSort.column == key) and (QuestKeeper.currentSort.order == "asc" and " [^]" or " [v]") or ""
         h.text:SetText(h.baseText .. arrow)
     end
 
-    for _, b in pairs(QuestKeeperDBAddon.buttons) do b:Hide() end
+    for _, b in pairs(QuestKeeper.buttons) do b:Hide() end
 
-    local searchText = (QuestKeeperDBAddon.searchBox and QuestKeeperDBAddon.searchBox:GetText() or ""):lower()
+    local searchText = (QuestKeeper.searchBox and QuestKeeper.searchBox:GetText() or ""):lower()
     local dataList = {}
     local totalQuests = 0
 
@@ -200,17 +178,25 @@ function QuestKeeperDBAddon.UpdateList()
            displayDate:lower():find(searchText, 1, true) or
            (dateSearchThreshold ~= "" and dateOnlyNumbers:find(dateSearchThreshold, 1, true)) then
             
-            local entry = data
-            entry.id = id
-            entry.displayDate = displayDate
-            table.insert(dataList, entry)
+            -- Create a shallow copy to protect the global QuestKeeperDB from sorting corruption
+            table.insert(dataList, {
+                id = id,
+                title = data.title,
+                status = data.status,
+                timestamp = data.timestamp,
+                isImported = data.isImported,
+                isDaily = data.isDaily,
+                isRepeatable = data.isRepeatable,
+                isEdited = data.isEdited,
+                displayDate = displayDate
+            })
         end
     end
     
     table.sort(dataList, function(a, b)
         if not a or not b then return false end
-        local col = QuestKeeperDBAddon.currentSort.column
-        local order = QuestKeeperDBAddon.currentSort.order
+        local col = QuestKeeper.currentSort.column
+        local order = QuestKeeper.currentSort.order
 
         -- For timestamps: Unknow should always be at the bottom of the list, no matter if asc or desc ordering
         if col == "timestamp" then
@@ -248,18 +234,18 @@ function QuestKeeperDBAddon.UpdateList()
         return tostring(a.id) < tostring(b.id)
     end)
 
-    if QuestKeeperDBAddon.searchCount then
+    if QuestKeeper.searchCount then
         if searchText == "" then
-            QuestKeeperDBAddon.searchCount:SetText(string.format("%d/%d", totalQuests, totalQuests))
+            QuestKeeper.searchCount:SetText(string.format("%d/%d", totalQuests, totalQuests))
         else
-            QuestKeeperDBAddon.searchCount:SetText(string.format("%d/%d", #dataList, totalQuests))
+            QuestKeeper.searchCount:SetText(string.format("%d/%d", #dataList, totalQuests))
         end
     end
 
     for i, data in ipairs(dataList) do
-        local b = QuestKeeperDBAddon.buttons[i] or CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
+        local b = QuestKeeper.buttons[i] or CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
         b:SetSize(690, 25); b:SetPoint("TOPLEFT", 5, -(i-1)*26); b:Show()
-        QuestKeeperDBAddon.buttons[i] = b
+        QuestKeeper.buttons[i] = b
         if not b.colID then
             b.colID = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); b.colID:SetPoint("LEFT", 10, 0)
             b.colTitle = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); b.colTitle:SetPoint("LEFT", 75, 0)
@@ -282,12 +268,12 @@ function QuestKeeperDBAddon.UpdateList()
         
         b:SetScript("OnClick", function()
             -- 1. State update
-            QuestKeeperDBAddon.selectedQuestID = data.id
-            QuestKeeperDBAddon.currentGossipIndex = 1
+            QuestKeeper.selectedQuestID = data.id
+            QuestKeeper.currentGossipIndex = 1
             
             -- 2. Call the new formatter
-            if QuestKeeperDBAddon.UpdateDetailDisplay then
-                QuestKeeperDBAddon.UpdateDetailDisplay()
+            if QuestKeeper.UpdateDetailDisplay then
+                QuestKeeper.UpdateDetailDisplay()
             end
             
             -- 3. Show the frame

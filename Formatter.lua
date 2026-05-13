@@ -5,11 +5,13 @@ local statusMap = {
     abandoned  = "|cffff0000Abandoned|r"
 }
 
-function QuestKeeperDBAddon.UpdateDetailDisplay()
-    local qID = QuestKeeperDBAddon.selectedQuestID
+function QuestKeeper.UpdateDetailDisplay()
+    local qID = QuestKeeper.selectedQuestID
     local q = QuestKeeperDB[qID]
     
     if not q then return end
+
+    if not QuestKeeper.currentGossipIndex or QuestKeeper.lastSelectedQuestID ~= qID then QuestKeeper.currentGossipIndex = 1; QuestKeeper.lastSelectedQuestID = qID end
 
     -- 1. Fixed Header (Title)
     local titleText = q.title or "Unknown Quest"
@@ -38,31 +40,31 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
     local numG = (q.gossips and #q.gossips) or 0
     if numG > 1 then
         QuestDetailDisplay.gossipHeader:Show()
-        QuestDetailDisplay.gossipPageText:SetText(string.format("Introduction %d / %d", QuestKeeperDBAddon.currentGossipIndex, numG))
-        QuestDetailDisplay.prevGossip:SetEnabled(QuestKeeperDBAddon.currentGossipIndex > 1)
-        QuestDetailDisplay.nextGossip:SetEnabled(QuestKeeperDBAddon.currentGossipIndex < numG)
+        QuestDetailDisplay.gossipPageText:SetText(string.format("Introduction %d / %d", QuestKeeper.currentGossipIndex, numG))
+        QuestDetailDisplay.prevGossip:SetEnabled(QuestKeeper.currentGossipIndex > 1)
+        QuestDetailDisplay.nextGossip:SetEnabled(QuestKeeper.currentGossipIndex < numG)
     else
         QuestDetailDisplay.gossipHeader:Hide()
     end
 
     -- 4. Construct HTML Content
-    local currentGossip = (q.gossips and q.gossips[QuestKeeperDBAddon.currentGossipIndex]) or q.introduction or "No introduction recorded."
+    local currentGossip = (type(q.gossips) == "table" and q.gossips[QuestKeeper.currentGossipIndex]) or "No introduction recorded."
     
     local html = "<html><body>"
     
     -- INTRODUCTION
-    html = html .. "<p>|cff00ff00[Introduction]:|r<br/>" .. Sanitize(currentGossip) .. "</p><br/>"
+    html = html .. "<p>|cff00ff00[Introduction]:|r<br/>" .. QuestKeeper.Sanitize(currentGossip) .. "</p><br/>"
     
     -- DESCRIPTION
-    html = html .. "<p>|cff00ff00[Description]:|r<br/>" .. Sanitize(q.description) .. "</p><br/>"
+    html = html .. "<p>|cff00ff00[Description]:|r<br/>" .. QuestKeeper.Sanitize(q.description) .. "</p><br/>"
     
     -- OBJECTIVES
-    html = html .. "<p>|cff00ff00[Objectives]:|r<br/>" .. Sanitize(q.objectives) .. "</p>"
+    html = html .. "<p>|cff00ff00[Objectives]:|r<br/>" .. QuestKeeper.Sanitize(q.objectives) .. "</p>"
 
     -- Hand-in Items
     if q.handInItems and #q.handInItems > 0 then
         for _, id in ipairs(q.handInItems) do
-            html = html .. QuestKeeperDBAddon.GetItemHTML(id, "|cff888888Requires:|r")
+            html = html .. QuestKeeper.GetItemHTML(id, "|cff888888Requires:|r")
         end
     end
     html = html .. "<br/>"
@@ -82,13 +84,13 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
         -- Reward Items
         if q.rewardItems then
             for _, id in ipairs(q.rewardItems) do
-                html = html .. QuestKeeperDBAddon.GetItemHTML(id, "|cff888888Grants:|r")
+                html = html .. QuestKeeper.GetItemHTML(id, "|cff888888Grants:|r")
             end
         end
 
         if q.awards then
             for _, info in ipairs(q.awards) do
-                html = html .. QuestKeeperDBAddon.GetItemHTML(info.id, "|cff888888Currencies:|r", true)
+                html = html .. QuestKeeper.GetItemHTML(info.id, "|cff888888Currencies:|r", true)
             end
         end
 
@@ -99,35 +101,69 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
         end
 
         -- Reputation
-        if q.rep and q.rep ~= "" then
+                -- Reputation
+        if q.rep and #q.rep > 0 then
             local isCompleted = (q.status == "completed")
-            
-            -- 1. Format the block: Replace commas with line breaks
-            local repHTML = q.rep:gsub(", ", "<br/>")
+            local lines = {}
 
-            -- 2. Apply colors using a function match
-            -- This matches each "line" and colors it based on the symbols present
-            repHTML = repHTML:gsub("([^<>]+)(<?/?%a*/?>?)", function(line, tag)
-                local result = line
-                if line:find("%%?%%?") then -- (??) Predicted
-                    local color = isCompleted and "|cff888888" or "|cffeee8aa"
-                    result = color .. line .. "|r"
-                elseif line:find("%%?") then -- (?) Unexpected
-                    result = "|cffeee8aa" .. line .. "|r"
+            for idx, repData in ipairs(q.rep) do
+                local faction = repData.faction or "Unknown"
+                local amount = repData.amount or 0
+                local state = repData.state
+
+                -- Determine sign and directional math automatically
+                local sign = (amount >= 0) and "+" or "-"
+                local isDecrease = (amount < 0)
+
+                -- Absolute value for clean layout string binding
+                local displayAmount = math.abs(amount)
+                local lineText = string.format("%s (%s%d)", faction, sign, displayAmount)
+                local color = ""
+                local suffix = ""
+
+                -- Apply precise directional styling rules based on the state and progression
+                if state == QuestKeeper.REP_STATES.PREDICTION then
+                    if isDecrease then
+                        color = isCompleted and "|cff888888" or "|cffcd7f32"
+                    else
+                        color = isCompleted and "|cff888888" or "|cffeee8aa"
+                    end
+                    suffix = " (?)"
+                elseif state == QuestKeeper.REP_STATES.UNEXPECTED then
+                    -- Always gray to signify unconfirmed or unexpected data
+                    color = "|cff888888"
+                    suffix = " (??)"
+                elseif state == QuestKeeper.REP_STATES.ACTUAL then
+                    if isDecrease then
+                        color = "|cffff4500"
+                    else
+                        color = ""
+                    end
+                    suffix = ""
                 end
-                return result .. tag -- Verified (No change)
-            end)
 
+                -- Wraps the entire text block including the suffix in the color tags
+                local formattedLine = lineText .. suffix
+                if color ~= "" then
+                    formattedLine = color .. formattedLine .. "|r"
+                end
+
+                -- Wrap in a safe hyperlink token passing array index for tooltips
+                formattedLine = string.format("<a href=\"qkrep:%d\">%s</a>", idx, formattedLine)
+                table.insert(lines, formattedLine)
+            end
+
+            local repHTML = table.concat(lines, "<br/>")
             html = html .. "<p>|cffa335ee[Reputation]:|r<br/>" .. repHTML .. "</p>"
         end
     end
 
     -- IN PROGRESS
     if q.progressText ~= "" or (q.progItems and #q.progItems > 0) then
-        html = html .. "<p>|cff00ff00[In Progress]:|r<br/>" .. Sanitize(q.progressText) .. "</p>"
+        html = html .. "<p>|cff00ff00[In Progress]:|r<br/>" .. QuestKeeper.Sanitize(q.progressText) .. "</p>"
         if q.progItems and #q.progItems > 0 then
             for _, id in ipairs(q.progItems) do
-                html = html .. QuestKeeperDBAddon.GetItemHTML(id, "|cff888888Mentions:|r")
+                html = html .. QuestKeeper.GetItemHTML(id, "|cff888888Mentions:|r")
             end
         end
         html = html .. "<br/>"
@@ -135,7 +171,7 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
     
     -- COMPLETION
     local compHeader = (q.isDaily or q.isRepeatable) and ("[Completion] (" .. (q.completionCount or 0) .. " times):") or "[Completion]:"
-    html = html .. "<p>|cff00ff00" .. compHeader .. "|r<br/>" .. Sanitize(q.completionText) .. "</p>"
+    html = html .. "<p><br/>|cff00ff00" .. compHeader .. "|r<br/>" .. QuestKeeper.Sanitize(q.completionText) .. "</p>"
 
     -- HISTORY
     if (q.isDaily or q.isRepeatable) and q.completionHistory and #q.completionHistory > 0 then
@@ -148,9 +184,19 @@ function QuestKeeperDBAddon.UpdateDetailDisplay()
     html = html .. "</body></html>"
 
     -- Render and Scroll update
-    QuestDetailDisplay.content:SetHeight(0)
     QuestDetailDisplay.content:SetText(html)
-    QuestDetailDisplay.content:SetHeight(QuestDetailDisplay.content:GetContentHeight() + 50)
+    QuestDetailDisplay.content:SetHeight(math.max(100, QuestDetailDisplay.content:GetContentHeight() + 50))
+
+    -- Show edit button if imported quest
+    if QuestDetailDisplay.editBtn then
+        if q.isImported then
+            QuestDetailDisplay.editBtn:Show()
+        else
+            QuestDetailDisplay.editBtn:Hide()
+        end
+    end
     
-    QuestDetailDisplay:Show()
+    if QuestDetailDisplay:IsShown() then
+        QuestDetailDisplay:Show()
+    end
 end

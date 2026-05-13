@@ -38,7 +38,7 @@ local function InitializeMenu(self, level)
     UIDropDownMenu_AddButton(info, level)
 end
 
-function UpdatePos()
+function QuestKeeper.UpdateMinimapPos()
     local angle = rad(QuestKeeperSettings.MinimapPos)
     mBtn:SetPoint("CENTER", Minimap, "CENTER", cos(angle)*80, sin(angle)*80)
     if QuestKeeperSettings.MinimapHidden then mBtn:Hide() else mBtn:Show() end
@@ -53,7 +53,7 @@ mBtn:SetScript("OnClick", function(self, button)
         if QuestListFrame:IsShown() then 
             QuestListFrame:Hide() 
         else 
-            QuestKeeperDBAddon.UpdateList()
+            QuestKeeper.UpdateList()
             QuestListFrame:Show() 
         end 
     end
@@ -66,7 +66,7 @@ mBtn:SetScript("OnDragStart", function(self)
         local mx, my = Minimap:GetCenter()
         local scale = Minimap:GetEffectiveScale()
         QuestKeeperSettings.MinimapPos = deg(atan2(y - my*scale, x - mx*scale))
-        UpdatePos()
+        QuestKeeper.UpdateMinimapPos()
     end) 
 end)
 
@@ -74,4 +74,4 @@ mBtn:SetScript("OnDragStop", function(self)
     self:SetScript("OnUpdate", nil)
 end)
 
-C_Timer.After(1, UpdatePos)
+C_Timer.After(1, QuestKeeper.UpdateMinimapPos)

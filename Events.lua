@@ -2,19 +2,40 @@ local f = CreateFrame("Frame")
 local sessionProcessed = {}
 local lastCompletedID = nil
 local lastCompletedTime = 0
+local pendingRepCheck = nil
 
-local function GetOrCreateQuest(qID)
+function QuestKeeper.OnStartup()
+    -- 1. MIGRATE
+    QuestKeeper.MigrateDatabase()
+    
+    -- 2. VALIDATE
+    if QuestKeeper.DB_STATE ~= QuestKeeper.DB_STATES.LOCKED then
+        QuestKeeper.ValidateDatabase()
+    end
+
+    -- 3. IMPORT
+    if QuestKeeper.DB_STATE == QuestKeeper.DB_STATES.READY then
+        QuestKeeper.ImportCompletedQuests()
+        QuestKeeper.UpdateActiveQuests()
+    end
+
+    -- 4. UI REFRESH
+    QuestKeeper.UpdateList()
+end
+
+function QuestKeeper.GetOrCreateQuest(qID)
+    if QuestKeeper.DB_STATE ~= QuestKeeper.DB_STATES.READY then 
+        return nil 
+    end
     if not qID or qID <= 0 then return nil end
     if not QuestKeeperDB[qID] then 
         QuestKeeperDB[qID] = { 
-            status="discovered", rewardItems={}, handInItems={}, progItems={}, compItems={}, 
-            xp=0, money=0, rep="", discoveredDate="Unknown", acceptedDate="Unknown", 
-            completedDate="Unknown", timestamp=time(), completionCount=0, 
-            completionHistory={}, isDaily=false, isRepeatable=false, isImported=false,
-            gossips = {}, objectives = "", description = "",
+            id = qID,
+            status = "discovered", 
+            discoveredDate = QuestKeeper.GetDate(),
+            timestamp = time(),
         } 
     end
-    QuestKeeperDB[qID].isImported = false
     return QuestKeeperDB[qID]
 end
 
@@ -65,13 +86,15 @@ local function SafeGetQuestID()
 end
 
 local function UpdateRewardData(qID)
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if not q then return end
     
     C_Timer.After(0.4, function()
         -- 1. Identify Quest Type
         local isD, isR = GetQuestTypeInfo(qID)
-        q.isDaily, q.isRepeatable = isD, isR
+        if not q.isDaily and not q.isRepeatable then
+            q.isDaily, q.isRepeatable = isD, isR
+        end
         
         -- 2. Basic Rewards
         q.xp, q.money = GetRewardXP(), GetRewardMoney()
@@ -107,10 +130,13 @@ local function UpdateRewardData(qID)
         fetchLinks(GetNumQuestRewards(), "reward", q.rewardItems)
         fetchLinks(GetNumQuestItems(), "required", q.handInItems)
         
-        -- 6. Modern Reputation Detection (Priority)
-        q.rep = GetQuestReputationRewards(qID)
+        -- 6. Modern Reputation Detection
+        -- Do not overwrite if the quest is completed or currently being turned in
+        if q.status == "discovered" then
+            q.rep = GetPredictedQuestReputationRewards(qID)
+        end
         
-        if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
+        if QuestKeeper.UpdateList then QuestKeeper.UpdateList() end
     end)
 end
 
@@ -131,14 +157,14 @@ end
 
 Handlers["QUEST_DETAIL"] = function()
     local qID = SafeGetQuestID()
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if q then
         q.timestamp = time()
         q.status = "discovered"
         q.title = GetTitleText()
         q.description = GetQuestText()
         q.objectives = GetObjectiveText()
-        q.discoveredDate, q.timestamp = QuestKeeperDBAddon.GetDate(), time()
+        q.discoveredDate, q.timestamp = QuestKeeper.GetDate(), time()
 
         if not q.gossips then q.gossips = {} end
         
@@ -149,6 +175,7 @@ Handlers["QUEST_DETAIL"] = function()
             end
             if not found then table.insert(q.gossips, f.lastGossip) end
         end
+        f.lastGossip = nil
         UpdateRewardData(qID)
     end
 end
@@ -156,7 +183,7 @@ end
 Handlers["QUEST_PROGRESS"] = function()
     C_Timer.After(0.15, function()
         local qID = SafeGetQuestID()
-        local q = GetOrCreateQuest(qID)
+        local q = QuestKeeper.GetOrCreateQuest(qID)
         if q then
             q.timestamp = time()
             local text = GetProgressText()
@@ -173,100 +200,178 @@ Handlers["QUEST_PROGRESS"] = function()
                     if itemID then table.insert(q.progItems, itemID) end
                 end
             end
-            if QuestKeeperDBAddon.UpdateList then QuestKeeperDBAddon.UpdateList() end
+            if QuestKeeper.UpdateList then QuestKeeper.UpdateList() end
         end
     end)
 end
 
 Handlers["QUEST_COMPLETE"] = function()
     local qID = SafeGetQuestID()
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if q then
+        -- Save text and rewards, but not don't change the status
         lastCompletedID, lastCompletedTime = qID, GetTime()
-        q.timestamp = time()
-        q.status = "completed"
-        q.completedDate = QuestKeeperDBAddon.GetDate()
         q.completionText = GetRewardText()
+        UpdateRewardData(qID)
+    end
+    pendingRepCheck = nil
+end
+
+Handlers["QUEST_TURNED_IN"] = function(qID, xp, money)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
+    if q then
+        q.status = "completed"
+        q.timestamp = time()
+        q.completedDate = QuestKeeper.GetDate()
+        
+        -- Overwrite with actual values
+        if xp and xp > 0 then q.xp = xp end
+        if money and money > 0 then q.money = money end
+
+        -- Detect repeatable / daily quests
         local isD, isR = GetQuestTypeInfo(qID)
         if isD or isR then
             q.completionCount = (q.completionCount or 0) + 1
             if not q.completionHistory then q.completionHistory = {} end
             table.insert(q.completionHistory, q.completedDate)
         end
+
+        -- Single consolidated snapshot mapping baseline values
+        pendingRepCheck = {
+            questID = qID,
+            timestamp = GetTime(),
+            factions = {}
+        }
+
+        if type(q.rep) == "table" and #q.rep > 0 then
+            -- Run expected prediction loops
+            for _, repData in ipairs(q.rep) do
+                local currentData = C_Reputation.GetFactionDataByID(repData.factionID)
+                if currentData then
+                    pendingRepCheck.factions[repData.factionID] = {
+                        standing = currentData.currentStanding,
+                        threshold = currentData.currentReactionThreshold
+                    }
+                end
+            end
+        else
+            -- Unified global scan fallback loop
+            for i = 1, C_Reputation.GetNumFactions() do
+                local factionInfo = C_Reputation.GetFactionDataByIndex(i)
+                if factionInfo and not factionInfo.isHeader and factionInfo.factionID then
+                    pendingRepCheck.factions[factionInfo.factionID] = {
+                        standing = factionInfo.currentStanding,
+                        threshold = factionInfo.currentReactionThreshold
+                    }
+                end
+            end
+        end
+
         UpdateRewardData(qID)
     end
 end
 
 Handlers["QUEST_ACCEPTED"] = function(qID)
-    local q = GetOrCreateQuest(qID)
+    local q = QuestKeeper.GetOrCreateQuest(qID)
     if q then
         q.timestamp = time()
         q.status = "inProgress"
-        q.acceptedDate = QuestKeeperDBAddon.GetDate() 
+        q.acceptedDate = QuestKeeper.GetDate() 
     end
 end
 
 Handlers["QUEST_REMOVED"] = function(qID)
     if not C_QuestLog.IsQuestFlaggedCompleted(qID) then
-        local q = GetOrCreateQuest(qID)
+        local q = QuestKeeper.GetOrCreateQuest(qID)
         if q then 
             q.timestamp = time()
             q.status = "abandoned"
-            q.completedDate = QuestKeeperDBAddon.GetDate() 
+            q.completedDate = QuestKeeper.GetDate() 
         end
     end
 end
 
-Handlers["CHAT_MSG_COMBAT_FACTION_CHANGE"] = function(msg)
-    -- Using the correct scope for lastCompletedID/Time
-    local lastID = lastCompletedID or QuestKeeperDBAddon.lastCompletedID
-    local lastTime = lastCompletedTime or QuestKeeperDBAddon.lastCompletedTime
+-- Data-driven handler verifying exact internal memory deltas and unexpected gains
+Handlers["UPDATE_FACTION"] = function()
+    if pendingRepCheck and (GetTime() - pendingRepCheck.timestamp) < 3 then
+        local q = QuestKeeperDB[pendingRepCheck.questID]
+        if q then
+            if type(q.rep) ~= "table" then q.rep = {} end
+            local changesFound = false
 
-    -- Check if a quest was completed in the last 3 seconds
-    if lastID and lastTime and (GetTime() - lastTime) < 3 then
-        -- Patterns for different localizations and generic gains
-        local p1 = FACTION_STANDING_INCREASED:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
-        local p2 = FACTION_STANDING_INCREASED_GENERIC:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
-        
-        local faction, amount = msg:match(p1) or msg:match(p2)
-
-        if faction and amount then
-            local q = QuestKeeperDB[lastID]
-            if q then
-                local exactRep = faction .. " (+" .. amount .. ")"
-                
-                if q.rep and q.rep ~= "" then
-                    -- Escape faction name for safe pattern matching
-                    local safeFaction = faction:gsub("([%^%$%%%.%*%+%-%?%[%]])", "%%%1")
+            for factionID, snapData in pairs(pendingRepCheck.factions) do
+                local freshData = C_Reputation.GetFactionDataByID(factionID)
+                if freshData then
+                    local delta = 0
                     
-                    -- If the faction exists in the string (as a predicted value)
-                    if q.rep:find(faction, 1, true) then
-                        -- Escape faction name for safe pattern matching
-                        local safeFaction = faction:gsub("([%^%$%%%.%*%+%-%?%[%]])", "%%%1")
-                        
-                        -- This pattern finds the faction name and everything until a comma or end of string.
-                        -- It effectively removes the predicted part like "Faction (+5) (??)" 
-                        -- and prepares it to be replaced by the exact value.
-                        local pattern = safeFaction .. "[^,]*"
-                        q.rep = q.rep:gsub(pattern, exactRep)
+                    if freshData.currentStanding >= snapData.standing then
+                        -- Handle standard gains or standard reductions inside the same tier rank
+                        delta = freshData.currentStanding - snapData.standing
                     else
-                        -- Faction was not predicted: append with (?)
-                        q.rep = q.rep .. ", " .. exactRep .. " (?)"
+                        -- Handle Tier Threshold Boundary Crossings (Rank Up or Rank Down)
+                        if freshData.currentReactionThreshold ~= snapData.threshold then
+                            if freshData.currentReactionThreshold > snapData.threshold then
+                                -- Rank Level Up: Add remaining progress of old tier to current progress of new tier
+                                delta = (freshData.currentReactionThreshold - snapData.standing) + freshData.currentStanding
+                            else
+                                -- Rank Derank/Drop: Calculate a negative delta across the tier boundary drop
+                                delta = freshData.currentStanding - (snapData.threshold - snapData.standing)
+                            end
+                        else
+                            -- Standard negative value progression inside the same tier
+                            delta = freshData.currentStanding - snapData.standing
+                        end
+                    end
+
+                    -- Update database only if a true difference occurred
+                    if delta ~= 0 then
+                        local recordFound = false
+                        
+                        -- Track loop updating existing expected predicted rows
+                        for _, repData in ipairs(q.rep) do
+                            if repData.factionID == factionID then
+                                repData.amount = delta
+                                repData.state = QuestKeeper.REP_STATES.ACTUAL
+                                recordFound = true
+                                break
+                            end
+                        end
+
+                        -- Single dynamic fallback injecting unexpected global rewards or losses
+                        if not recordFound then
+                            table.insert(q.rep, {
+                                factionID = factionID,
+                                faction = freshData.name,
+                                amount = delta,
+                                state = QuestKeeper.REP_STATES.UNEXPECTED
+                            })
+                        end
+                        changesFound = true
                     end
                 end
+            end
 
-                -- Refresh UI if the selected quest is the one being updated
-                if QuestKeeperDBAddon.selectedQuestID == lastID then
-                    QuestKeeperDBAddon.UpdateDetailDisplay()
+            if #q.rep == 0 then q.rep = nil end
+
+            local targetQuestID = pendingRepCheck and pendingRepCheck.questID
+            pendingRepCheck = nil
+
+            if changesFound then
+                if QuestKeeper.UpdateList then 
+                    QuestKeeper.UpdateList() 
+                end
+                if QuestKeeper.selectedQuestID == targetQuestID and QuestKeeper.UpdateDetailDisplay then
+                    QuestKeeper.UpdateDetailDisplay()
                 end
             end
+            pendingRepCheck = nil
         end
     end
 end
 
 Handlers["ADDON_LOADED"] = function(name)
     if name == "QuestKeeper" then
-        C_Timer.After(2, function() QuestKeeperDBAddon.ValidateDatabase() end)
+        QuestKeeper.OnStartup()
     end
 end
 
@@ -277,6 +382,7 @@ end)
 
 for event in pairs(Handlers) do f:RegisterEvent(event) end
 f:RegisterEvent("QUEST_FINISHED")
+f:RegisterEvent("UPDATE_FACTION")
 
 local function AttachSounds(frame)
     if not frame then return end

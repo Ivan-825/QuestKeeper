@@ -6,14 +6,14 @@ SlashCmdList["QUESTKEEPER"] = function(msg)
     
     if cmd == "show" then
         QuestKeeperSettings.MinimapHidden = false
-        UpdatePos()
+        QuestKeeper.UpdateMinimapPos()
     elseif cmd == "hide" then
         QuestKeeperSettings.MinimapHidden = true
-        UpdatePos()
+        QuestKeeper.UpdateMinimapPos()
     elseif cmd == "reset" then
         QuestKeeperSettings.MinimapPos = 45
         QuestKeeperSettings.MinimapHidden = false
-        UpdatePos()
+        QuestKeeper.UpdateMinimapPos()
     elseif cmd == "delete" then
         local qID = tonumber(arg) 
         
@@ -25,7 +25,7 @@ SlashCmdList["QUESTKEEPER"] = function(msg)
                 
                 print("|cffabd473QuestKeeper:|r Quest " .. questTitle .. " deleted from database. (ID: " .. qID .. ")")
                 if QuestListFrame:IsShown() then 
-                    QuestKeeperDBAddon.UpdateList() 
+                    QuestKeeper.UpdateList() 
                 end
             else
                 print("|cffabd473QuestKeeper:|r Quest with id " .. qID .. " does not exist or is not present in the database.")
@@ -35,6 +35,6 @@ SlashCmdList["QUESTKEEPER"] = function(msg)
         end
 
     else
-        if QuestListFrame:IsShown() then QuestListFrame:Hide() else QuestKeeperDBAddon.UpdateList(); QuestListFrame:Show() end
+        if QuestListFrame:IsShown() then QuestListFrame:Hide() else QuestKeeper.UpdateList(); QuestListFrame:Show() end
     end
 end
