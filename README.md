@@ -1,4 +1,4 @@
-# QuestKeeper *(v.1.0.3b)*
+# QuestKeeper *(v.1.0.3)*
 
 *A comprehensive quest chronicler that tracks dialogue, rewards, reputation for all discovered, accepted, completed, or abandoned quests with timestamps for each stage.*
 
@@ -9,11 +9,12 @@ The creation of the addon was motivated by me having to face the situation while
 
 * Tracking newly discovered, accepted, completed and abandoned quests.
 * For each quest, timestamp is saved for each state.
-* Introduction, In-progress and Completion dialogs are all saved automatically while the addon is enabled.
+* Introduction, Description, In-progress and Completion dialogs are all saved automatically while the addon is enabled.
+* Multiple introduction dialogues can be saved for daily / repeatable quests.
 * Reward / hand in items and currencies are tracked automatically.
 * Reward profession skill points are saved upon quest discovery.
 * Reward xp and gold is tracked automatically, upon quest discovery.
-* Reputation reward is saved upon completion.
+* Reputation reward is predicted upon quest dicovery, and replaced by actual, received repu upon completion.
 * Quests, completed without the addon being active are also partially imported and tracked - only quest id can be recovered from the game api.
 * Manual editing is possible for imported quests, but not for properly tracked quests.
 * Search by id, quest name and timestamp is supported.
@@ -27,7 +28,7 @@ The creation of the addon was motivated by me having to face the situation while
 > *Found a bug? Need help? Open a ticket here to receive support and help the development: https://github.com/Ivan-825/QuestKeeper/issues*
 * Amount is not yet tracked for reward currencies
 * Text does not fit in textarea when editing imported quests
-* **Only predicted reputational values are shown under rewards, the actual values are not saved.** - only in v1.0.3-beta, in v1.0.2 it does save the actual values, but the method used for that was more prone to error than this new approach, but this still needs some more work. 
+* Sometimes actual reputation does not replace predicted reputation.
 
 ## **PLANNED FEATURES**
 * Independent quest tracking for separate characters, with option to combine all characters QuestKeeper database.
